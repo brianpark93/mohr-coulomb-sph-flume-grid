@@ -1,5 +1,10 @@
 # Mohr–Coulomb SPH flume deposits: a complete 7×7×7×7 parameter grid
 
+**▶ Interactive explorer:
+<https://brianpark93.github.io/mohr-coulomb-sph-flume-grid/>** — move a slider
+and the particle deposit for that parameter combination is drawn. Pin a shape
+to compare against while you change one parameter.
+
 2401 LS-DYNA SPH simulations of the same dry granular flume collapse, one for
 every combination of seven levels of each of the four Mohr–Coulomb parameters.
 Published so that anyone can check what the model actually does as the
@@ -34,8 +39,28 @@ normal termination; total 34.3 h on eight concurrent four-thread solves.
 
 | File | Contents |
 |---|---|
-| `grid7.json` | everything, 774 KB, meant to be loaded whole by a browser |
-| `grid7_metrics.csv` | one row per case, scalars only, for analysis in a spreadsheet or pandas |
+| `index.html` | the interactive explorer; no dependencies, no build step |
+| `grid7.json` | case metadata and envelopes, 823 KB |
+| `particles.bin` | every particle position, 4.8 MB (see below) |
+| `grid7_metrics.csv` | one row per case, scalars only, for a spreadsheet or pandas |
+
+### `particles.bin`
+
+All 1,269,420 deposit particles, as little-endian `int16` pairs — x then z, in
+millimetres — with the cases laid end to end. Each case in `grid7.json` carries
+`po` (offset, in particles) and `pn` (count), so its slice is
+
+```js
+const P = new Int16Array(await (await fetch("particles.bin")).arrayBuffer());
+for (let i = 0; i < c.pn; i++) {
+  const o = (c.po + i) * 2;
+  const x = P[o] / 1000, z = P[o + 1] / 1000;   // metres
+}
+```
+
+Deposit sizes run from 125 to 643 particles, so the offsets are not a fixed
+stride. Millimetres in `int16` loses nothing: the particle spacing in the model
+is 10 mm.
 
 ## Using `grid7.json`
 
