@@ -46,7 +46,7 @@ normal termination; total 34.3 h on eight concurrent four-thread solves.
 
 ### `particles.bin`
 
-All 1,269,420 deposit particles, as little-endian `int16` pairs — x then z, in
+All 1,320,684 particles, as little-endian `int16` pairs — x then z, in
 millimetres — with the cases laid end to end. Each case in `grid7.json` carries
 `po` (offset, in particles) and `pn` (count), so its slice is
 
@@ -58,9 +58,20 @@ for (let i = 0; i < c.pn; i++) {
 }
 ```
 
-Deposit sizes run from 125 to 643 particles, so the offsets are not a fixed
-stride. Millimetres in `int16` loses nothing: the particle spacing in the model
-is 10 mm.
+**The first `c.pin` of them are the deposit** — the ones every measurement is
+taken on. The remaining `c.pn - c.pin` are material still on the chute
+(43,009 particles across the grid) or past the end of the plate (8,255), kept
+so a viewer can draw them for context. Material that fell below the plate is
+not in the file at all.
+
+Membership is decided when the file is written, on the unrounded coordinates,
+and not recoverable from the stored ones: rounding to the millimetre moves
+particles across the x = 1.99 m boundary, so re-deriving it here would
+disagree with the measurements in about 2% of cells.
+
+Counts run from 125 to 682 particles, so the offsets are not a fixed stride.
+Millimetres in `int16` loses nothing: the particle spacing in the model is
+10 mm.
 
 ## Using `grid7.json`
 
@@ -95,7 +106,8 @@ Per case:
 | `xmin`, `s` | back edge (m) and footprint length (m) |
 | `xmax`, `zmax` | runout (m) and peak deposit thickness (m) |
 | `z` | 40-point upper envelope in mm, on ξ ∈ [0, 1] along the deposit |
-| `n` | particles in the deposit |
+| `po`, `pn` | offset and count of this case's particles in `particles.bin` |
+| `pin` | how many of those are the deposit, not context |
 | `retained` | fraction of the cluster still on the slope face, excluded |
 | `ranoff` | fraction that passed the end of the modelled plate, excluded |
 | `censored` | see below |

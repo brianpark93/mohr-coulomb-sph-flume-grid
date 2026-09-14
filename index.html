@@ -3,12 +3,16 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Mohr–Coulomb SPH flume deposits — parameter explorer</title>
+<title>Mohr&ndash;Coulomb SPH flume deposits &mdash; parameter explorer</title>
+<!-- Deliberately pure ASCII, with HTML entities for every symbol. This file
+     lives on a Windows machine where a stray PowerShell rewrite once replaced
+     every non-ASCII character with a question mark; entities cannot be
+     corrupted that way. -->
 <style>
   :root{
     --ink:#23211d; --muted:#6f6c66; --line:#d9d6cd; --grid:#ebe8e0;
-    --bg:#faf8f4; --panel:#fff; --sand:#c9a08a; --sand-dk:#8d6a53;
-    --steel:#898781; --deep:#1b3a6b; --warn:#a3231b; --ghost:#b9b5ab;
+    --bg:#faf8f4; --panel:#fff; --sand:#c9a08a; --steel:#898781;
+    --deep:#1b3a6b; --warn:#a3231b; --context:#bdb5a6;
   }
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--ink);
@@ -50,19 +54,20 @@
   button:hover{border-color:var(--muted)}
   button.active{background:var(--deep);border-color:var(--deep);color:#fff}
   .note{color:var(--muted);font-size:12.5px;line-height:1.5;margin-top:14px}
+  .key{font-size:15px;line-height:1}
   .load{padding:50px 20px;text-align:center;color:var(--muted)}
 </style>
 </head>
 <body>
 <div class="page">
-  <h1>Mohr–Coulomb SPH flume deposits</h1>
+  <h1>Mohr&ndash;Coulomb SPH flume deposits</h1>
   <p class="sub">Move a slider and watch the deposit change. 2401 LS-DYNA SPH
-    simulations, one for every combination of seven levels of each parameter —
+    simulations, one for every combination of seven levels of each parameter,
     so any three can be held while the fourth is stepped.
     <a href="https://github.com/brianpark93/mohr-coulomb-sph-flume-grid">data and
     documentation</a></p>
 
-  <div id="boot" class="card load">loading 2401 deposits…</div>
+  <div id="boot" class="card load">loading 2401 deposits&hellip;</div>
 
   <div id="app" style="display:none">
     <div class="card stage"><canvas id="cv"></canvas></div>
@@ -75,9 +80,9 @@
           <button id="env" class="active">Envelope</button>
           <button id="reset">Reset</button>
         </div>
-        <p class="note">Arrow keys step a slider once it has focus. The pinned
-          shape stays on screen in grey, so you can see exactly what one
-          parameter changes.</p>
+        <p class="note">Arrow keys step a slider once it has focus. A pinned
+          shape stays on screen in grey, which is what makes the effect of
+          changing one parameter readable.</p>
       </div>
       <div class="card pad">
         <h2>This deposit</h2>
@@ -86,8 +91,16 @@
           <tr><td>Peak thickness <small>z<sub>max</sub></small></td><td id="m-thk"></td></tr>
           <tr><td>Footprint <small>s</small></td><td id="m-fp"></td></tr>
           <tr><td>Particles in deposit</td><td id="m-np"></td></tr>
-          <tr><td>Left on the slope</td><td id="m-ret"></td></tr>
+          <tr><td>Shown but not measured</td><td id="m-out"></td></tr>
+          <tr><td>Left on the chute</td><td id="m-ret"></td></tr>
         </table>
+        <p class="note">
+          <span class="key" style="color:#c9a08a">&#9632;</span> the deposit,
+          which is what every number above describes.
+          <span class="key" style="color:#bdb5a6">&#9632;</span> material still
+          on the chute or past the end of the plate: drawn for context and
+          excluded from every measurement. Material that fell below the plate
+          is not drawn at all.</p>
         <div id="flag" class="flag"></div>
         <p class="note">Fixed axes and 1:1 scale throughout, so shapes stay
           directly comparable as you move the sliders.</p>
@@ -99,10 +112,10 @@
 <script>
 const AX = {x0:-0.16, x1:2.06, z0:-0.06, z1:0.46};   // metres, fixed for all cells
 const KEYS = [
-  {k:"gmod_mpa", sym:"G",   name:"shear modulus",   unit:"MPa", dp:2},
-  {k:"phi_rad",  sym:"φ",   name:"friction angle",  unit:"rad", dp:3},
-  {k:"psi_rad",  sym:"ψ",   name:"dilation angle",  unit:"rad", dp:3},
-  {k:"cval_pa",  sym:"c",   name:"cohesion",        unit:"Pa",  dp:0},
+  {k:"gmod_mpa", sym:"G",        name:"shear modulus",  unit:"MPa", dp:2},
+  {k:"phi_rad",  sym:"\u03c6", name:"friction angle", unit:"rad", dp:3},
+  {k:"psi_rad",  sym:"\u03c8", name:"dilation angle", unit:"rad", dp:3},
+  {k:"cval_pa",  sym:"c",        name:"cohesion",       unit:"Pa",  dp:0},
 ];
 let D, P, N, sel=[3,3,3,3], pinned=null, showEnv=true;
 
@@ -118,22 +131,27 @@ async function boot(){
     D = j; N = j.n_levels; P = new Int16Array(b);
   }catch(e){
     $("boot").textContent = "Could not load the dataset. If you opened this "
-      + "file directly from disk, serve the folder over HTTP instead — "
-      + "browsers block local fetch.";
+      + "file straight from disk, serve the folder over HTTP instead: "
+      + "browsers block fetch from file:// URLs.";
     return;
   }
   $("boot").style.display="none"; $("app").style.display="";
   buildSliders();
-  $("pin").onclick   = () => { pinned = pinned ? null : sel.slice();
-                               $("pin").classList.toggle("active", !!pinned);
-                               $("pin").textContent = pinned ? "Unpin"
-                                 : "Pin this shape to compare"; draw(); };
-  $("env").onclick   = () => { showEnv = !showEnv;
-                               $("env").classList.toggle("active", showEnv); draw(); };
-  $("reset").onclick = () => { sel=[3,3,3,3]; pinned=null;
-                               $("pin").classList.remove("active");
-                               $("pin").textContent="Pin this shape to compare";
-                               syncSliders(); draw(); };
+  $("pin").onclick = () => {
+    pinned = pinned ? null : sel.slice();
+    $("pin").classList.toggle("active", !!pinned);
+    $("pin").textContent = pinned ? "Unpin" : "Pin this shape to compare";
+    draw();
+  };
+  $("env").onclick = () => {
+    showEnv = !showEnv; $("env").classList.toggle("active", showEnv); draw();
+  };
+  $("reset").onclick = () => {
+    sel=[3,3,3,3]; pinned=null;
+    $("pin").classList.remove("active");
+    $("pin").textContent = "Pin this shape to compare";
+    syncSliders(); draw();
+  };
   addEventListener("resize", draw);
   draw();
 }
@@ -141,12 +159,14 @@ async function boot(){
 function buildSliders(){
   $("sliders").innerHTML = KEYS.map((p,i)=>{
     const lv = D.levels[p.k];
-    return `<div class="row">
-      <div class="lab"><span class="sym">${p.sym}<small>${p.name}</small></span>
-        <span class="val" id="v${i}"></span></div>
-      <input type="range" min="0" max="${N-1}" step="1" value="${sel[i]}" id="s${i}">
-      <div class="ticks"><span>${fmt(lv[0],p)}</span><span>${fmt(lv[N-1],p)}</span></div>
-    </div>`;
+    return '<div class="row">'
+      + '<div class="lab"><span class="sym">' + p.sym
+      + '<small>' + p.name + '</small></span>'
+      + '<span class="val" id="v' + i + '"></span></div>'
+      + '<input type="range" min="0" max="' + (N-1) + '" step="1" value="'
+      + sel[i] + '" id="s' + i + '">'
+      + '<div class="ticks"><span>' + fmt(lv[0],p) + '</span><span>'
+      + fmt(lv[N-1],p) + '</span></div></div>';
   }).join("");
   KEYS.forEach((p,i)=>{
     $("s"+i).addEventListener("input", e=>{
@@ -164,10 +184,9 @@ function syncSliders(){
 }
 
 function draw(){
-  const cv = $("cv"), dpr = devicePixelRatio||1;
+  const cv = $("cv"), dpr = devicePixelRatio || 1;
   const W = cv.clientWidth, H = W*(AX.z1-AX.z0)/(AX.x1-AX.x0);   // 1:1 aspect
-  cv.width = W*dpr; cv.height = H*dpr;
-  cv.style.height = H+"px";
+  cv.width = W*dpr; cv.height = H*dpr; cv.style.height = H+"px";
   const g = cv.getContext("2d");
   g.setTransform(dpr,0,0,dpr,0,0);
   g.clearRect(0,0,W,H);
@@ -175,42 +194,50 @@ function draw(){
   const sx = x => (x-AX.x0)/(AX.x1-AX.x0)*W;
   const sz = z => H - (z-AX.z0)/(AX.z1-AX.z0)*H;
 
-  // grid every 0.25 m, floor line, then the two structures
   g.strokeStyle="#ebe8e0"; g.lineWidth=1;
-  for(let x=0; x<=2.0; x+=0.25){ g.beginPath();
-    g.moveTo(sx(x),0); g.lineTo(sx(x),H); g.stroke(); }
-  for(let z=0; z<=0.4; z+=0.1){ g.beginPath();
-    g.moveTo(0,sz(z)); g.lineTo(W,sz(z)); g.stroke(); }
+  for(let x=0; x<=2.0; x+=0.25){
+    g.beginPath(); g.moveTo(sx(x),0); g.lineTo(sx(x),H); g.stroke(); }
+  for(let z=0; z<=0.4; z+=0.1){
+    g.beginPath(); g.moveTo(0,sz(z)); g.lineTo(W,sz(z)); g.stroke(); }
 
-  if(pinned) paint(g,sx,sz,D.cases[idx(pinned)],"#d7d3ca","#b9b5ab",false);
+  if(pinned) paint(g,sx,sz,D.cases[idx(pinned)],"#d7d3ca","#b9b5ab","#e3e0d8",false);
   const c = D.cases[idx(sel)];
-  paint(g,sx,sz,c,"#c9a08a","#1b3a6b",showEnv);
+  paint(g,sx,sz,c,"#c9a08a","#1b3a6b","#bdb5a6",showEnv);
 
-  // slide face and floor plate: two separate structures, never joined
+  // the chute and the floor plate: two separate structures, never joined,
+  // because the chute's toe and the start of the plate do not meet
   g.strokeStyle="#898781"; g.lineWidth=2; g.lineCap="round";
   for(const seg of [D.geometry.slide, D.geometry.floor]){
     g.beginPath(); g.moveTo(sx(seg[0][0]), sz(seg[0][1]));
     for(let i=1;i<seg.length;i++) g.lineTo(sx(seg[i][0]), sz(seg[i][1]));
     g.stroke();
   }
-  // end of the modelled plate
   g.strokeStyle="#a3231b"; g.lineWidth=1.5; g.setLineDash([5,4]);
   g.beginPath(); g.moveTo(sx(D.geometry.domain_x[1]),0);
   g.lineTo(sx(D.geometry.domain_x[1]),H); g.stroke(); g.setLineDash([]);
   g.fillStyle="#a3231b"; g.font="11px system-ui";
-  g.fillText("end of plate", sx(D.geometry.domain_x[1])-72, 14);
+  g.fillText("end of plate", sx(D.geometry.domain_x[1])-74, 14);
 
   readout(c);
 }
 
-function paint(g,sx,sz,c,dot,line,env){
+function paint(g,sx,sz,c,dot,line,context,env){
   if(!c) return;
+  // Particles are stored deposit-first: the leading `pin` lie inside the
+  // analysis domain and the rest is chute or past-plate material. Membership
+  // is decided at export time on the unrounded coordinates, because rounding
+  // to the millimetre moves particles across the boundary and anything
+  // re-deriving it here would disagree with the measurements.
   if(c.pn){
-    g.fillStyle = dot;
-    for(let i=0;i<c.pn;i++){
-      const o = (c.po+i)*2;
-      g.fillRect(sx(P[o]/1000)-1.1, sz(P[o+1]/1000)-1.1, 2.2, 2.2);
-    }
+    const dots = (from,to,fill) => {
+      g.fillStyle = fill;
+      for(let i=from;i<to;i++){
+        const o = (c.po+i)*2;
+        g.fillRect(sx(P[o]/1000)-1.1, sz(P[o+1]/1000)-1.1, 2.2, 2.2);
+      }
+    };
+    dots(c.pin, c.pn, context);   // context, behind
+    dots(0, c.pin, dot);          // the deposit the numbers describe
   }
   if(env){
     g.strokeStyle=line; g.lineWidth=1.8; g.beginPath();
@@ -224,18 +251,19 @@ function paint(g,sx,sz,c,dot,line,env){
 
 function readout(c){
   if(!c) return;
-  $("m-run").textContent = c.xmax.toFixed(3)+" m";
-  $("m-thk").textContent = (c.zmax*100).toFixed(1)+" cm";
-  $("m-fp").textContent  = c.s.toFixed(3)+" m";
-  $("m-np").textContent  = c.pn ?? "—";
-  $("m-ret").textContent = (c.retained*100).toFixed(1)+" %";
+  $("m-run").textContent = c.xmax.toFixed(3) + " m";
+  $("m-thk").textContent = (c.zmax*100).toFixed(1) + " cm";
+  $("m-fp").textContent  = c.s.toFixed(3) + " m";
+  $("m-np").textContent  = (c.pin != null) ? c.pin : "-";
+  $("m-out").textContent = (c.pn != null && c.pin != null) ? (c.pn - c.pin) : "-";
+  $("m-ret").textContent = (c.retained*100).toFixed(1) + " %";
   const f = $("flag");
   f.className = "flag" + (c.censored ? " on" : "");
   if(c.censored) f.innerHTML = "<b>Runout is a lower bound here.</b> "
-    + (c.ranoff*100).toFixed(1) + "% of this deposit passed the end of the "
-    + "modelled plate at 1.99 m. Beyond that there is no floor, so the "
-    + "material falls freely and is excluded — its front position is set by "
-    + "how long it has been falling, not by the parameters.";
+    + (c.ranoff*100).toFixed(1) + "% of this material passed the end of the "
+    + "modelled plate at 1.99 m. Beyond that there is no floor, so it falls "
+    + "freely and is excluded from the measurements: its front position is "
+    + "set by how long it has been falling, not by the parameters.";
 }
 boot();
 </script>
