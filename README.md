@@ -100,11 +100,13 @@ Per case:
 | `ranoff` | fraction that passed the end of the modelled plate, excluded |
 | `censored` | see below |
 
-`d.geometry` carries the slide face and the floor plate as **two separate
-line segments**. They are different structures and they do not meet — the
-slide's lowest point is at (−0.0037, +0.0246) and the floor begins at
-(−0.0800, −0.0200) — so joining them into one polyline draws a spurious kink
-at the toe.
+`d.geometry` carries the chute face and the floor plate as **two separate
+line segments**, each `[[x0, z0], [x1, z1]]` in metres. They are different
+structures and they do not meet — the chute's lowest point is at
+(−0.0037, +0.0246) and the floor begins at (−0.0800, −0.0200) — so joining
+them into one polyline draws a spurious kink at the toe. The chute is exactly
+straight, `z = −1.7320x + 0.0182`, i.e. 60.00°, so two endpoints are an exact
+representation rather than a sampling of it.
 
 ## The `censored` flag — read this before trusting a runout
 
