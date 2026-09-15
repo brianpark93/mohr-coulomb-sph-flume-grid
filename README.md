@@ -43,6 +43,61 @@ normal termination; total 34.3 h on eight concurrent four-thread solves.
 | `grid7.json` | case metadata and envelopes, 823 KB |
 | `particles.bin` | every particle position, 4.8 MB (see below) |
 | `grid7_metrics.csv` | one row per case, scalars only, for a spreadsheet or pandas |
+| `surrogate.json` | emulator hyperparameters, PCA basis and held-out skill |
+| `surrogate.bin` | emulator weights, `float64` (see *The emulator*) |
+
+## The emulator
+
+The explorer has a second mode. **Solved grid** shows the 2401 simulations;
+**Emulator prediction** replaces the seven-step sliders with continuous ones
+and draws what a Gaussian-process emulator predicts for any parameter
+combination in range, with a band at its held-out surface error. Nothing in
+that mode was solved, and it is drawn as a dashed surface rather than as
+particles because a placement plus a shape is all the emulator outputs.
+
+**It has never seen this grid.** It is trained on the 3420 space-filling
+(Latin hypercube) simulations of the accompanying paper, so the faint solved
+deposit drawn underneath a prediction is a genuine out-of-sample comparison,
+not a fit being shown against its own training data.
+
+Inference is a dot product against the stored training inputs, which is why
+the whole model is ~270 KB rather than megabytes:
+
+```
+z*(x) = [ k(x, X) . alpha ] * y_std + y_mean
+k(a,b) = const * (1 + sqrt(3) d) exp(-sqrt(3) d),  d^2 = sum_k ((a_k-b_k)/ls_k)^2
+```
+
+`surrogate.bin` is `float64`: first `n_train * n_feat` values are the
+standardised training inputs `X` row-major, then `alpha` for each output in
+the order given by `outputs` in the header. Six outputs — `x_min`, `spread`,
+and four shape-PCA coefficients — reconstruct the profile through
+`pca_mean` + `pca_components`, on the same 40 bins as `grid7.json`. The
+`skill` block holds the measured held-out R² and RMSE per output and the
+surface RMSE the uncertainty band is drawn at. (`float64` rather than
+`float32` because the fitted noise level sits at its lower bound, so the
+kernel matrix is near-singular and `alpha` is large with heavy cancellation;
+in `float32` that cost 3.5e-4 of the output spread on the leading shape mode.)
+
+### What it cannot do
+
+**The starting position is not predictable, and the page does not pretend
+otherwise.** `x_min` is bimodal: 97.8% of the solved deposits have their back
+edge at the slope toe (sd 1.9 mm), while ~2% detach and start anywhere out to
+1.55 m — and those few carry 98% of its variance. Which case detaches is not
+a function of the four parameters, so the emulator scores **R² below zero** on
+it. The page therefore anchors every prediction at the toe and says so; the
+predicted *length and shape* are meaningful where the predicted *position*
+would not be. This is the second of the two failure classes named in the
+accompanying paper.
+
+Two further caveats. The analysis in the paper uses random forests for
+placement; here placement is a GP too, because a 500-tree forest exports to
+10–20 MB, and the paper's own comparison shows GP and forest agreeing to
+within 0.03 R² on every descriptor. And the band is the emulator's held-out
+error, **not** a GP posterior interval: the posterior variance needs the
+Cholesky factor of a 3420×3420 matrix (~23 MB), and it would measure
+interpolation between design points rather than error against the solver.
 
 ### `particles.bin`
 
