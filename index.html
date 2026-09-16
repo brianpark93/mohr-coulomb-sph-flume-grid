@@ -96,6 +96,8 @@
         <div class="btns">
           <button id="pin">Pin this shape to compare</button>
           <button id="env" class="active">Envelope</button>
+          <button id="sketch">Draw a deposit</button>
+          <button id="clearsketch">Clear drawing</button>
           <button id="reset">Reset</button>
         </div>
         <p class="note" id="slidernote"></p>
@@ -122,6 +124,7 @@ const NSTEP = 240;                    // slider resolution in prediction mode
 
 let D, P, N, S, XT, AL;               // grid data; surrogate header + weights
 let I, IS, IU;                        // inverse header, surfaces, parameters
+let sketch = null, sketching = false; // a hand-drawn deposit, if any
 let mode = "grid";
 let sel = [3,3,3,3];                  // grid mode: level indices
 let cont = [0.5,0.5,0.5,0.5];         // prediction mode: 0..1 along each range
@@ -185,11 +188,31 @@ async function boot(){
     showEnv = !showEnv; $("env").classList.toggle("active", showEnv); draw();
   };
   $("reset").onclick = () => {
-    sel=[3,3,3,3]; cont=[0.5,0.5,0.5,0.5]; pinned=null;
+    sel=[3,3,3,3]; cont=[0.5,0.5,0.5,0.5]; pinned=null; sketch=null;
+    sketching=false; $("sketch").classList.remove("active");
     $("pin").classList.remove("active");
     $("pin").textContent = "Pin this shape to compare";
     buildSliders(); draw();
   };
+  $("sketch").onclick = () => {
+    sketching = !sketching;
+    $("sketch").classList.toggle("active", sketching);
+    if(sketching && mode!=="inv") setMode("inv"); else draw();
+  };
+  $("clearsketch").onclick = () => { sketch = null; draw(); };
+  const cv = $("cv");
+  const paintAt = ev => { if(!sketching || mode!=="inv") return;
+                          ev.preventDefault(); sketchFromEvent(ev); draw(); };
+  cv.addEventListener("pointerdown", ev => {
+    if(!sketching || mode!=="inv") return;
+    if(sketch) sketch._last = null;
+    cv.setPointerCapture && cv.setPointerCapture(ev.pointerId);
+    paintAt(ev);
+  });
+  cv.addEventListener("pointermove", ev => {
+    if(ev.buttons) paintAt(ev);
+  });
+  cv.addEventListener("pointerup", () => { if(sketch) sketch._last = null; });
   addEventListener("resize", draw);
   setMode("grid");
 }
@@ -234,7 +257,10 @@ const SLIDERNOTE = () => ({
         + "sampled.",
   inv:  "The sliders choose the deposit to interrogate. A narrow bar on the "
         + "right means the shape pins that parameter down; a bar spanning the "
-        + "track means it does not.",
+        + "track means it does not. <b>Draw a deposit</b> lets you sketch a "
+        + "profile on the canvas instead and ask the same question of it; "
+        + "there is then no true answer to compare against, and the panel "
+        + "reports how close the nearest simulation actually is.",
 });
 
 function setMode(m){
@@ -243,7 +269,10 @@ function setMode(m){
     $("mode-"+k).classList.toggle("active", m===k);
   $("pin").style.display = m==="grid" ? "" : "none";
   $("env").style.display = m==="inv" ? "none" : "";
+  $("sketch").style.display = (m==="inv" && I) ? "" : "none";
+  $("clearsketch").style.display = (m==="inv" && sketch) ? "" : "none";
   if(m!=="grid"){ pinned=null; $("pin").classList.remove("active"); }
+  if(m!=="inv"){ sketching=false; $("sketch").classList.remove("active"); }
   $("modetext").innerHTML = MODETEXT()[m];
   $("slidernote").innerHTML = SLIDERNOTE()[m];
   $("rohead").textContent = m==="grid" ? "This deposit"
@@ -400,16 +429,59 @@ function querySurface(c){
   return z;
 }
 
+// ---- drawing a deposit by hand -----------------------------------------
+// The match falls back to the k nearest when nothing lies within eps, so a
+// sketch that resembles no simulation still returns something. What it must
+// not do is pretend the answer is good, hence bestDist is reported.
+function sketchFromEvent(ev){
+  const cv = $("cv"), r = cv.getBoundingClientRect();
+  const W = r.width, H = r.height;
+  const px = (ev.clientX - r.left), py = (ev.clientY - r.top);
+  const x = AX.x0 + px / W * (AX.x1 - AX.x0);
+  const z = Math.max(0, AX.z0 + (H - py) / H * (AX.z1 - AX.z0));
+  const k = Math.round(x / I.x_max * (I.nx - 1));
+  if(k < 0 || k >= I.nx) return;
+  if(!sketch){ sketch = new Float64Array(I.nx); sketch.fill(0); sketch._last = k; }
+  // join up to the previous bin so a quick drag does not leave gaps
+  const prev = (sketch._last == null) ? k : sketch._last;
+  const lo = Math.min(prev, k), hi = Math.max(prev, k);
+  const z0 = sketch[prev];
+  for(let j=lo; j<=hi; j++){
+    const t = (hi === lo) ? 1 : (j - lo) / (hi - lo);
+    sketch[j] = (prev <= k) ? (1-t)*z0 + t*z : (1-t)*z + t*z0;
+  }
+  sketch._last = k;
+}
+
+function paintSketch(g,sx,sz,q){
+  g.fillStyle = "rgba(201,160,138,.35)";
+  g.beginPath(); g.moveTo(sx(0), sz(0));
+  for(let k=0;k<I.nx;k++) g.lineTo(sx(k/(I.nx-1)*I.x_max), sz(q[k]));
+  g.lineTo(sx(I.x_max), sz(0)); g.closePath(); g.fill();
+  g.strokeStyle = "#8d6a53"; g.lineWidth = 2.4; g.beginPath();
+  for(let k=0;k<I.nx;k++){
+    const x = sx(k/(I.nx-1)*I.x_max), z = sz(q[k]);
+    k ? g.lineTo(x,z) : g.moveTo(x,z);
+  }
+  g.stroke();
+}
+
 function inverse(c){
-  const q = querySurface(c), nx = I.nx;
+  return inverseFrom(querySurface(c));
+}
+
+function inverseFrom(q){
+  const nx = I.nx;
   const d = new Float64Array(I.n);
   for(let i=0;i<I.n;i++){
     let s = 0, o = i*nx;
     for(let k=0;k<nx;k++){ const t = IS[o+k]/1000 - q[k]; s += t*t; }
     d[i] = Math.sqrt(s/nx);
   }
-  let sel = [];
-  for(let i=0;i<I.n;i++) if(d[i] < I.eps_m) sel.push(i);
+  let sel = [], best = Infinity;
+  for(let i=0;i<I.n;i++){ if(d[i] < best) best = d[i];
+                          if(d[i] < I.eps_m) sel.push(i); }
+  const within = sel.length;
   if(sel.length < I.k_min){
     sel = Array.from(d.keys()).sort((a,b)=>d[a]-d[b]).slice(0, I.k_min);
   }
@@ -421,11 +493,13 @@ function inverse(c){
     const v = sel.map(i => IU[i*4+j]).sort((a,b)=>a-b);
     return {name, lo: pct(v,5), mid: pct(v,50), hi: pct(v,95)};
   });
-  return {sel, stats, q};
+  return {sel, stats, q, best, within};
 }
 
-// the true value of the query, on the same 0..1 scale the bars use
+// the true value of the query, on the same 0..1 scale the bars use. A sketch
+// has no true value, so there is nothing to mark.
 function trueScaled(j){
+  if(sketch) return null;
   const p = KEYS[j], v = D.levels[p.k][sel[j]];
   let r = I.ranges[p.f], x = p.log ? Math.log10(v*1e6) : v;
   return clamp01((x - r[0]) / (r[1] - r[0]));
@@ -459,10 +533,16 @@ function draw(){
     paint(g,sx,sz,near.c,"#e2ded6","#d8d4cc","#eae7e0",false);
     paintPrediction(g,sx,sz,pred);
   }else{
-    const c = D.cases[idx(sel)];
-    inv = inverse(c);
-    paintMatches(g,sx,sz,inv);
-    paint(g,sx,sz,c,"#c9a08a","#1b3a6b","#bdb5a6",true);
+    if(sketch){
+      inv = inverseFrom(sketch);
+      paintMatches(g,sx,sz,inv);
+      paintSketch(g,sx,sz,sketch);
+    }else{
+      const c = D.cases[idx(sel)];
+      inv = inverse(c);
+      paintMatches(g,sx,sz,inv);
+      paint(g,sx,sz,c,"#c9a08a","#1b3a6b","#bdb5a6",true);
+    }
   }
 
   // the chute and the floor plate: two separate structures, never joined,
@@ -612,7 +692,8 @@ function readoutInv(inv){
       +   '<div class="span" style="left:' + (s.lo*100) + '%;width:'
       +     (w*100) + '%"></div>'
       +   '<div class="tick mid" style="left:' + (s.mid*100) + '%"></div>'
-      +   '<div class="tick tru" style="left:' + (t*100) + '%"></div>'
+      +   (t === null ? ''
+          : '<div class="tick tru" style="left:' + (t*100) + '%"></div>')
       + '</div></td></tr>';
   };
   $("ro").innerHTML =
@@ -622,15 +703,31 @@ function readoutInv(inv){
   const worst = inv.stats.reduce((a,b)=>(b.hi-b.lo)>(a.hi-a.lo)?b:a);
   const best  = inv.stats.reduce((a,b)=>(b.hi-b.lo)<(a.hi-a.lo)?b:a);
   const nameOf = k => KEYS[I.params.indexOf(k.name)].sym;
+  const spread = nameOf(best) + " is pinned to "
+    + ((best.hi-best.lo)*100).toFixed(0) + "% of its range while "
+    + nameOf(worst) + " spans " + ((worst.hi-worst.lo)*100).toFixed(0) + "%. ";
   const f = $("flag");
   f.className = "flag on";
-  f.innerHTML = "<b>" + inv.sel.length + " simulations produce this deposit "
-    + "to within " + EPSCM() + " cm.</b> Across them "
-    + nameOf(best) + " is pinned to " + ((best.hi-best.lo)*100).toFixed(0)
-    + "% of its range while " + nameOf(worst) + " spans "
-    + ((worst.hi-worst.lo)*100).toFixed(0) + "%. The blue tick is the median "
-    + "of the matches, the dark tick the value that actually produced this "
-    + "deposit.";
+  if(!sketch){
+    f.innerHTML = "<b>" + inv.within + " simulations produce this deposit "
+      + "to within " + EPSCM() + " cm.</b> Across them " + spread
+      + "The blue tick is the median of the matches, the dark tick the value "
+      + "that actually produced this deposit.";
+  }else if(inv.within > 0){
+    f.innerHTML = "<b>" + inv.within + " simulations match your drawing to "
+      + "within " + EPSCM() + " cm</b> (closest: "
+      + (inv.best*100).toFixed(1) + " cm). " + spread
+      + "There is no dark tick because a drawing has no true answer.";
+  }else{
+    f.innerHTML = "<b>Nothing in the design looks much like this.</b> The "
+      + "closest of the 3420 simulations is " + (inv.best*100).toFixed(1)
+      + " cm away, against the " + EPSCM() + " cm that counts as a match, so "
+      + "the " + inv.sel.length + " nearest are shown instead and the bars "
+      + "below say more about where the design has points than about your "
+      + "shape. Draw something the model can actually produce &mdash; a wedge "
+      + "thinning downstream, or a mound in the first half metre &mdash; and "
+      + "the match will tighten.";
+  }
 }
 boot();
 </script>

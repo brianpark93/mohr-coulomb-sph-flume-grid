@@ -110,6 +110,15 @@ it — deposits that cannot be told apart — and shows the range of each
 parameter across them. They are drawn on the canvas together, so the set of
 shapes a criterion cannot separate is visible rather than asserted.
 
+**Or draw one.** *Draw a deposit* lets you sketch a profile on the canvas and
+ask the same question of it. There is then no true answer to mark, so the
+panel reports instead how far the nearest of the 3420 simulations actually is.
+If nothing lies within the 2.25 cm match radius it says so plainly and falls
+back to the twelve nearest — the bars in that case describe where the design
+has points rather than anything about your shape, which is worth knowing
+rather than hiding. Sketch something the model can produce — a wedge thinning
+downstream, or a mound in the first half metre — and the match tightens.
+
 **No model is involved.** `inverse.bin` is the design itself: `n × nx` `int16`
 millimetres (each deposit's surface on `nx` points from 0 to `x_max`), then
 `n × 4` `float32` parameters on 0–1 of their sampled range, with G on log₁₀.
