@@ -194,7 +194,17 @@ async function boot(){
   setMode("grid");
 }
 
-const MODETEXT = {
+// These read S and I, which are null until boot() has fetched them, and they
+// are interpolated into the copy below. So they must be FUNCTIONS evaluated
+// when a mode is entered, not constants evaluated when the script loads --
+// an earlier version built the copy at load time and referenced EPSCM before
+// its own declaration, which threw a ReferenceError and left the page stuck
+// on "loading" with nothing in the console but that one line.
+const EPSCM = () => I ? (I.eps_m*100).toFixed(2) : "-";
+const ERRCM = () => S ? (S.skill.surface_rmse_m*100).toFixed(1) : "-";
+const TOEPCT = () => S ? (S.x_min_tail.toe_fraction*100).toFixed(1) : "-";
+
+const MODETEXT = () => ({
   grid:
     "2401 LS-DYNA SPH simulations, one for every combination of seven levels "
     + "of each parameter, so any three can be held while the fourth is "
@@ -215,8 +225,8 @@ const MODETEXT = {
     + "told apart &mdash; and the bars show the range of each parameter "
     + "across them. <b>No model is involved</b>, so nothing here can be "
     + "blamed on a regressor.",
-};
-const SLIDERNOTE = {
+});
+const SLIDERNOTE = () => ({
   grid: "Arrow keys step a slider once it has focus. A pinned shape stays on "
         + "screen in grey, which is what makes the effect of changing one "
         + "parameter readable.",
@@ -225,7 +235,7 @@ const SLIDERNOTE = {
   inv:  "The sliders choose the deposit to interrogate. A narrow bar on the "
         + "right means the shape pins that parameter down; a bar spanning the "
         + "track means it does not.",
-};
+});
 
 function setMode(m){
   mode = m;
@@ -234,8 +244,8 @@ function setMode(m){
   $("pin").style.display = m==="grid" ? "" : "none";
   $("env").style.display = m==="inv" ? "none" : "";
   if(m!=="grid"){ pinned=null; $("pin").classList.remove("active"); }
-  $("modetext").innerHTML = MODETEXT[m];
-  $("slidernote").innerHTML = SLIDERNOTE[m];
+  $("modetext").innerHTML = MODETEXT()[m];
+  $("slidernote").innerHTML = SLIDERNOTE()[m];
   $("rohead").textContent = m==="grid" ? "This deposit"
                           : m==="pred" ? "Predicted deposit"
                           : "What the shape alone can tell you";
@@ -270,9 +280,6 @@ function setMode(m){
       + 'see it</i>, not as <i>the deposit does not contain it</i>.';
   buildSliders(); draw();
 }
-const EPSCM = () => I ? (I.eps_m*100).toFixed(2) : "-";
-const ERRCM = () => S ? (S.skill.surface_rmse_m*100).toFixed(1) : "-";
-const TOEPCT = () => S ? (S.x_min_tail.toe_fraction*100).toFixed(1) : "-";
 
 // ---------------------------------------------------------------- sliders
 function contValue(i){
