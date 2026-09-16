@@ -58,6 +58,14 @@
          border-radius:8px;overflow:hidden;width:fit-content}
   .modes button{border:0;border-radius:0;padding:8px 16px;font-size:13.5px}
   .modes button+button{border-left:1px solid var(--line)}
+  .track{position:relative;height:16px;border-radius:4px;background:var(--grid);
+         width:100%;min-width:130px}
+  .span{position:absolute;top:0;height:16px;border-radius:4px;
+        background:rgba(42,120,214,.30)}
+  .tick{position:absolute;top:-2px;width:2px;height:20px;margin-left:-1px}
+  .tick.mid{background:var(--pred)}
+  .tick.tru{background:var(--ink)}
+  td .track{margin:2px 0}
   .note{color:var(--muted);font-size:12.5px;line-height:1.5;margin-top:14px}
   .key{font-size:15px;line-height:1}
   .load{padding:50px 20px;text-align:center;color:var(--muted)}
@@ -76,6 +84,7 @@
     <div class="modes">
       <button id="mode-grid" class="active">Solved grid</button>
       <button id="mode-pred">Emulator prediction</button>
+      <button id="mode-inv">Inverse</button>
     </div>
     <p class="sub" id="modetext"></p>
 
@@ -112,6 +121,7 @@ const KEYS = [
 const NSTEP = 240;                    // slider resolution in prediction mode
 
 let D, P, N, S, XT, AL;               // grid data; surrogate header + weights
+let I, IS, IU;                        // inverse header, surfaces, parameters
 let mode = "grid";
 let sel = [3,3,3,3];                  // grid mode: level indices
 let cont = [0.5,0.5,0.5,0.5];         // prediction mode: 0..1 along each range
@@ -150,10 +160,21 @@ async function boot(){
     XT = all.subarray(0, S.n_train*S.n_feat);
     AL = all.subarray(S.n_train*S.n_feat);
   }catch(e){ S = null; $("mode-pred").style.display = "none"; }
+  // the inverse data is optional in the same way
+  try{
+    const [h, w] = await Promise.all([
+      fetch("inverse.json").then(r=>{if(!r.ok)throw 0; return r.json()}),
+      fetch("inverse.bin").then(r=>{if(!r.ok)throw 0; return r.arrayBuffer()})
+    ]);
+    I = h;
+    IS = new Int16Array(w, 0, I.n*I.nx);                 // surfaces, mm
+    IU = new Float32Array(w, I.n*I.nx*2, I.n*4);         // params on 0..1
+  }catch(e){ I = null; $("mode-inv").style.display = "none"; }
 
   $("boot").style.display="none"; $("app").style.display="";
   $("mode-grid").onclick = () => setMode("grid");
   $("mode-pred").onclick = () => setMode("pred");
+  $("mode-inv").onclick = () => setMode("inv");
   $("pin").onclick = () => {
     pinned = pinned ? null : (mode==="grid" ? sel.slice() : null);
     $("pin").classList.toggle("active", !!pinned);
@@ -173,37 +194,61 @@ async function boot(){
   setMode("grid");
 }
 
+const MODETEXT = {
+  grid:
+    "2401 LS-DYNA SPH simulations, one for every combination of seven levels "
+    + "of each parameter, so any three can be held while the fourth is "
+    + "stepped. <b>Every shape here was solved.</b>",
+  pred:
+    "A Gaussian-process emulator maps the four parameters to the whole "
+    + "arrested deposit, so the sliders move continuously instead of in "
+    + "seven steps. <b>Nothing here was solved</b> &mdash; it is what the "
+    + "model predicts. The emulator was trained on 3420 space-filling "
+    + "simulations and has never seen the grid, so the faint particles are "
+    + "an out-of-sample check on the prediction drawn over them.",
+  inv:
+    "The question backwards. Pick a solved deposit with the sliders, then "
+    + "forget the parameters that made it: the panel on the right shows what "
+    + "could be recovered from the shape alone. Every one of the 3420 "
+    + "space-filling simulations whose surface lies within "
+    + EPSCM() + " cm of this one is collected &mdash; deposits that cannot be "
+    + "told apart &mdash; and the bars show the range of each parameter "
+    + "across them. <b>No model is involved</b>, so nothing here can be "
+    + "blamed on a regressor.",
+};
+const SLIDERNOTE = {
+  grid: "Arrow keys step a slider once it has focus. A pinned shape stays on "
+        + "screen in grey, which is what makes the effect of changing one "
+        + "parameter readable.",
+  pred: "Sliders are continuous here. " + "G moves on a log scale, as it was "
+        + "sampled.",
+  inv:  "The sliders choose the deposit to interrogate. A narrow bar on the "
+        + "right means the shape pins that parameter down; a bar spanning the "
+        + "track means it does not.",
+};
+
 function setMode(m){
   mode = m;
-  $("mode-grid").classList.toggle("active", m==="grid");
-  $("mode-pred").classList.toggle("active", m==="pred");
+  for(const k of ["grid","pred","inv"])
+    $("mode-"+k).classList.toggle("active", m===k);
   $("pin").style.display = m==="grid" ? "" : "none";
+  $("env").style.display = m==="inv" ? "none" : "";
   if(m!=="grid"){ pinned=null; $("pin").classList.remove("active"); }
-  $("modetext").innerHTML = m==="grid"
-    ? "2401 LS-DYNA SPH simulations, one for every combination of seven levels "
-      + "of each parameter, so any three can be held while the fourth is "
-      + "stepped. <b>Every shape here was solved.</b>"
-    : "A Gaussian-process emulator maps the four parameters to the whole "
-      + "arrested deposit, so the sliders move continuously instead of in "
-      + "seven steps. <b>Nothing here was solved</b> &mdash; it is what the "
-      + "model predicts. The emulator was trained on 3420 space-filling "
-      + "simulations and has never seen the grid, so the faint particles are "
-      + "an out-of-sample check on the prediction drawn over them.";
-  $("slidernote").innerHTML = m==="grid"
-    ? "Arrow keys step a slider once it has focus. A pinned shape stays on "
-      + "screen in grey, which is what makes the effect of changing one "
-      + "parameter readable."
-    : "Sliders are continuous here. " + KEYS[0].sym + " moves on a log scale, "
-      + "as it was sampled.";
-  $("rohead").textContent = m==="grid" ? "This deposit" : "Predicted deposit";
-  $("keynote").innerHTML = m==="grid"
+  $("modetext").innerHTML = MODETEXT[m];
+  $("slidernote").innerHTML = SLIDERNOTE[m];
+  $("rohead").textContent = m==="grid" ? "This deposit"
+                          : m==="pred" ? "Predicted deposit"
+                          : "What the shape alone can tell you";
+  $("keynote").innerHTML =
+      m==="grid"
     ? '<span class="key" style="color:#c9a08a">&#9632;</span> the deposit, '
       + 'which is what every number above describes. '
       + '<span class="key" style="color:#bdb5a6">&#9632;</span> material still '
       + 'on the chute or past the end of the plate: drawn for context and '
       + 'excluded from every measurement. Material that fell below the plate '
       + 'is not drawn at all.'
-    : '<span class="key" style="color:#2a78d6">&#9632;</span> the predicted '
+    : m==="pred"
+    ? '<span class="key" style="color:#2a78d6">&#9632;</span> the predicted '
       + 'deposit surface, with a band at the emulator\'s held-out error of '
       + ERRCM() + ' cm. It is drawn as a surface, not as particles, because a '
       + 'placement plus a shape is all the emulator outputs. '
@@ -214,9 +259,18 @@ function setMode(m){
       + 'from the toe and start far out, and <b>which case detaches is not '
       + 'predictable from the four parameters</b> &mdash; it is this '
       + 'emulator\'s known failure mode, so the length and shape below are '
-      + 'meaningful where the starting position would not be.';
+      + 'meaningful where the starting position would not be.'
+    : '<b>The honest caveat.</b> The match is an RMS vertical difference '
+      + 'between surfaces, and that measure is nearly blind to cohesion: '
+      + 'tightening it from 2.25 cm to 0.20 cm, which cuts the matched set '
+      + 'from about 310 cases to 3, leaves cohesion no better recovered, '
+      + 'while friction holds throughout. Cohesion\'s signature is surface '
+      + 'texture rather than height, and a regressor given the envelope does '
+      + 'recover it. So read a wide cohesion bar as <i>this criterion cannot '
+      + 'see it</i>, not as <i>the deposit does not contain it</i>.';
   buildSliders(); draw();
 }
+const EPSCM = () => I ? (I.eps_m*100).toFixed(2) : "-";
 const ERRCM = () => S ? (S.skill.surface_rmse_m*100).toFixed(1) : "-";
 const TOEPCT = () => S ? (S.x_min_tail.toe_fraction*100).toFixed(1) : "-";
 
@@ -230,7 +284,7 @@ const disp = (i,v) => KEYS[i].log ? v/1e6 : v;      // G is stored in Pa
 function buildSliders(){
   $("sliders").innerHTML = KEYS.map((p,i)=>{
     let lo, hi, max, val;
-    if(mode==="grid"){
+    if(mode!=="pred"){
       const lv = D.levels[p.k]; lo = lv[0]; hi = lv[N-1]; max = N-1; val = sel[i];
     }else{
       const r = S.ranges[p.f];
@@ -248,7 +302,7 @@ function buildSliders(){
   }).join("");
   KEYS.forEach((p,i)=>{
     $("s"+i).addEventListener("input", e=>{
-      if(mode==="grid") sel[i] = +e.target.value;
+      if(mode!=="pred") sel[i] = +e.target.value;
       else cont[i] = clamp01(+e.target.value / NSTEP);
       syncSliders(); draw();
     });
@@ -258,7 +312,7 @@ function buildSliders(){
 const fmt = (v,p) => v.toFixed(p.dp) + " " + p.unit;
 function syncSliders(){
   KEYS.forEach((p,i)=>{
-    $("v"+i).textContent = mode==="grid"
+    $("v"+i).textContent = mode!=="pred"
       ? fmt(D.levels[p.k][sel[i]], p)
       : fmt(disp(i, contValue(i)), p);
   });
@@ -323,6 +377,53 @@ function nearestCell(raw){
   return {s, c: D.cases[idx(s)]};
 }
 
+// ---------------------------------------------------------------- inverse
+// No model: collect every design case whose surface lies within eps of the
+// query and report the spread of each parameter across them. Those are
+// deposits that cannot be told apart, so whatever they disagree about is
+// what the deposit does not determine.
+function querySurface(c){
+  const z = new Float64Array(I.nx), n = c.z.length;
+  for(let k=0;k<I.nx;k++){
+    const x = k/(I.nx-1)*I.x_max, t = (x - c.xmin)/c.s;
+    if(t < 0 || t > 1){ z[k] = 0; continue; }
+    const u = t*(n-1), j = Math.min(n-2, Math.floor(u)), f = u-j;
+    z[k] = ((1-f)*c.z[j] + f*c.z[j+1]) / 1000;      // stored in mm
+  }
+  return z;
+}
+
+function inverse(c){
+  const q = querySurface(c), nx = I.nx;
+  const d = new Float64Array(I.n);
+  for(let i=0;i<I.n;i++){
+    let s = 0, o = i*nx;
+    for(let k=0;k<nx;k++){ const t = IS[o+k]/1000 - q[k]; s += t*t; }
+    d[i] = Math.sqrt(s/nx);
+  }
+  let sel = [];
+  for(let i=0;i<I.n;i++) if(d[i] < I.eps_m) sel.push(i);
+  if(sel.length < I.k_min){
+    sel = Array.from(d.keys()).sort((a,b)=>d[a]-d[b]).slice(0, I.k_min);
+  }
+  const pct = (v,p) => {
+    const t = (v.length-1)*p/100, lo = Math.floor(t), f = t-lo;
+    return lo+1 < v.length ? (1-f)*v[lo] + f*v[lo+1] : v[lo];
+  };
+  const stats = I.params.map((name,j)=>{
+    const v = sel.map(i => IU[i*4+j]).sort((a,b)=>a-b);
+    return {name, lo: pct(v,5), mid: pct(v,50), hi: pct(v,95)};
+  });
+  return {sel, stats, q};
+}
+
+// the true value of the query, on the same 0..1 scale the bars use
+function trueScaled(j){
+  const p = KEYS[j], v = D.levels[p.k][sel[j]];
+  let r = I.ranges[p.f], x = p.log ? Math.log10(v*1e6) : v;
+  return clamp01((x - r[0]) / (r[1] - r[0]));
+}
+
 // ---------------------------------------------------------------- drawing
 function draw(){
   const cv = $("cv"), dpr = devicePixelRatio || 1;
@@ -341,15 +442,20 @@ function draw(){
   for(let z=0; z<=0.4; z+=0.1){
     g.beginPath(); g.moveTo(0,sz(z)); g.lineTo(W,sz(z)); g.stroke(); }
 
-  let pred = null, near = null;
+  let pred = null, near = null, inv = null;
   if(mode==="grid"){
     if(pinned) paint(g,sx,sz,D.cases[idx(pinned)],"#d7d3ca","#b9b5ab","#e3e0d8",false);
     paint(g,sx,sz,D.cases[idx(sel)],"#c9a08a","#1b3a6b","#bdb5a6",showEnv);
-  }else{
+  }else if(mode==="pred"){
     pred = predictDeposit();
     near = nearestCell(pred.raw);
     paint(g,sx,sz,near.c,"#e2ded6","#d8d4cc","#eae7e0",false);
     paintPrediction(g,sx,sz,pred);
+  }else{
+    const c = D.cases[idx(sel)];
+    inv = inverse(c);
+    paintMatches(g,sx,sz,inv);
+    paint(g,sx,sz,c,"#c9a08a","#1b3a6b","#bdb5a6",true);
   }
 
   // the chute and the floor plate: two separate structures, never joined,
@@ -366,7 +472,25 @@ function draw(){
   g.fillStyle="#a3231b"; g.font="11px system-ui";
   g.fillText("end of plate", sx(D.geometry.domain_x[1])-74, 14);
 
-  mode==="grid" ? readoutGrid(D.cases[idx(sel)]) : readoutPred(pred, near);
+  if(mode==="grid") readoutGrid(D.cases[idx(sel)]);
+  else if(mode==="pred") readoutPred(pred, near);
+  else readoutInv(inv);
+}
+
+// every deposit that could not be told apart from this one, drawn together:
+// the picture of what the shape does not determine
+function paintMatches(g,sx,sz,inv){
+  const step = Math.max(1, Math.ceil(inv.sel.length/60));
+  g.strokeStyle = "rgba(42,120,214,.22)"; g.lineWidth = 1;
+  for(let s=0; s<inv.sel.length; s+=step){
+    const o = inv.sel[s]*I.nx;
+    g.beginPath();
+    for(let k=0;k<I.nx;k++){
+      const x = sx(k/(I.nx-1)*I.x_max), z = sz(IS[o+k]/1000);
+      k ? g.lineTo(x,z) : g.moveTo(x,z);
+    }
+    g.stroke();
+  }
 }
 
 function paint(g,sx,sz,c,dot,line,context,env){
@@ -469,6 +593,37 @@ function readoutPred(p, near){
     + "20 cm in runout. The grid cell can be up to half a level away in every "
     + "parameter, so some of that is real difference and not emulator error.";
   f.innerHTML = msg;
+}
+
+function readoutInv(inv){
+  if(!inv) return;
+  const bar = (j,s) => {
+    const t = trueScaled(j), w = Math.max(s.hi-s.lo, 0.004);
+    return '<tr><td>' + KEYS[j].sym + '<small>' + KEYS[j].name + '</small></td>'
+      + '<td class="cmp">' + (w*100).toFixed(0) + '%</td>'
+      + '<td><div class="track">'
+      +   '<div class="span" style="left:' + (s.lo*100) + '%;width:'
+      +     (w*100) + '%"></div>'
+      +   '<div class="tick mid" style="left:' + (s.mid*100) + '%"></div>'
+      +   '<div class="tick tru" style="left:' + (t*100) + '%"></div>'
+      + '</div></td></tr>';
+  };
+  $("ro").innerHTML =
+      '<tr><td></td><td class="cmp">width</td><td>'
+    + '5&ndash;95% of the ' + inv.sel.length + ' matches</td></tr>'
+    + inv.stats.map((s,j)=>bar(j,s)).join("");
+  const worst = inv.stats.reduce((a,b)=>(b.hi-b.lo)>(a.hi-a.lo)?b:a);
+  const best  = inv.stats.reduce((a,b)=>(b.hi-b.lo)<(a.hi-a.lo)?b:a);
+  const nameOf = k => KEYS[I.params.indexOf(k.name)].sym;
+  const f = $("flag");
+  f.className = "flag on";
+  f.innerHTML = "<b>" + inv.sel.length + " simulations produce this deposit "
+    + "to within " + EPSCM() + " cm.</b> Across them "
+    + nameOf(best) + " is pinned to " + ((best.hi-best.lo)*100).toFixed(0)
+    + "% of its range while " + nameOf(worst) + " spans "
+    + ((worst.hi-worst.lo)*100).toFixed(0) + "%. The blue tick is the median "
+    + "of the matches, the dark tick the value that actually produced this "
+    + "deposit.";
 }
 boot();
 </script>

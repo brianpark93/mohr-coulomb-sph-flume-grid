@@ -45,6 +45,8 @@ normal termination; total 34.3 h on eight concurrent four-thread solves.
 | `grid7_metrics.csv` | one row per case, scalars only, for a spreadsheet or pandas |
 | `surrogate.json` | emulator hyperparameters, PCA basis and held-out skill |
 | `surrogate.bin` | emulator weights, `float64` (see *The emulator*) |
+| `inverse.json` | inverse-mode settings and measured skill |
+| `inverse.bin` | design surfaces + parameters (see *The inverse*) |
 
 ## The emulator
 
@@ -98,6 +100,51 @@ within 0.03 R² on every descriptor. And the band is the emulator's held-out
 error, **not** a GP posterior interval: the posterior variance needs the
 Cholesky factor of a 3420×3420 matrix (~23 MB), and it would measure
 interpolation between design points rather than error against the solver.
+
+## The inverse
+
+The third mode asks the question backwards: **given a deposit, what produced
+it?** Pick a solved deposit with the sliders, and the page collects every one
+of the 3420 space-filling simulations whose surface lies within 2.25 cm RMS of
+it — deposits that cannot be told apart — and shows the range of each
+parameter across them. They are drawn on the canvas together, so the set of
+shapes a criterion cannot separate is visible rather than asserted.
+
+**No model is involved.** `inverse.bin` is the design itself: `n × nx` `int16`
+millimetres (each deposit's surface on `nx` points from 0 to `x_max`), then
+`n × 4` `float32` parameters on 0–1 of their sampled range, with G on log₁₀.
+Matching is a plain RMS difference. Nothing here can be blamed on a regressor.
+
+Measured on exactly what ships, leaving each query out of its own match set:
+
+| | R² (leave-one-out) | R² (2401-cell grid) | span of matched set |
+|---|---|---|---|
+| φ friction | **0.78** | 0.79 | **0.43** |
+| ψ dilation | 0.42 | 0.42 | 0.80 |
+| G modulus | 0.32 | 0.32 | **0.83** |
+| c cohesion | 0.20 | 0.28 | 0.72 |
+
+Span is the 5–95 percentile range as a fraction of the full sampled range, so
+1.0 would mean the deposit says nothing at all. Friction is pinned down;
+stiffness is barely constrained, which is the identifiability result of the
+paper reached without any model.
+
+### Read the cohesion bar carefully
+
+Cohesion scores badly here and that is a property of the **criterion**, not of
+the deposit. An RMS vertical difference weights every point of the profile
+equally, so it is dominated by the gross length and thickness that friction
+controls. Tightening the match from 2.25 cm to 0.20 cm — which cuts the
+matched set from ~310 cases to 3 — leaves cohesion no better recovered, while
+friction holds at 0.78 throughout, so no threshold fixes it. A random forest
+given the envelope as *features* does recover cohesion (R² 0.72), because it
+can weight the bins that carry it. Cohesion's signature is surface texture
+rather than height; the accompanying paper measures the deposit surface as 31%
+rougher in the high-cohesion third of the parameter box.
+
+That has a consequence worth stating: a calibration scored on surface misfit
+alone is close to blind to cohesion, which is why the paper's search returns
+two disjoint regions that fit comparably well and differ chiefly in it.
 
 ### `particles.bin`
 
