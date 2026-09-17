@@ -271,14 +271,13 @@ const SLIDERNOTE = () => ({
         + "parameter readable.",
   pred: "Sliders are continuous here. " + "G moves on a log scale, as it was "
         + "sampled.",
-  inv:  "Drag &epsilon; and watch the bars. Tight, and almost nothing counts "
-        + "as the same shape, so the bars narrow because they are describing "
-        + "three cases rather than because the deposit determines anything; "
-        + "loose, and most of the design matches and every bar fills its "
-        + "track. A narrow bar at a sensible &epsilon; means the shape pins "
-        + "that parameter down. Until you draw, an example solved deposit "
-        + "stands in, and its true parameters are marked so you can see what "
-        + "the method recovers and what it misses.",
+  inv:  "Drag &epsilon; and watch the bars. Tight enough and nothing in the "
+        + "design is that close, so there is nothing to report at all; loose, "
+        + "and most of the design matches and every bar fills its track. A "
+        + "narrow bar between those two is the shape pinning that parameter "
+        + "down. Until you draw, an example solved deposit stands in, and its "
+        + "true parameters are marked so you can see what the method recovers "
+        + "and what it misses.",
 });
 
 function setMode(m){
@@ -485,9 +484,9 @@ function querySurface(c){
 }
 
 // ---- drawing a deposit by hand -----------------------------------------
-// The match falls back to the k nearest when nothing lies within eps, so a
-// sketch that resembles no simulation still returns something. What it must
-// not do is pretend the answer is good, hence bestDist is reported.
+// A sketch that resembles no simulation returns nothing at all, and the panel
+// says so along with the distance to the closest case. That is better than
+// the nearest few, which would look like an answer.
 function sketchFromEvent(ev){
   const cv = $("cv"), r = cv.getBoundingClientRect();
   const W = r.width, H = r.height;
@@ -533,13 +532,15 @@ function inverseFrom(q){
     for(let k=0;k<nx;k++){ const t = IS[o+k]/1000 - q[k]; s += t*t; }
     d[i] = Math.sqrt(s/nx);
   }
-  let sel = [], best = Infinity;
+  const sel = [];
+  let best = Infinity;
   for(let i=0;i<I.n;i++){ if(d[i] < best) best = d[i];
                           if(d[i] < epsM) sel.push(i); }
-  const within = sel.length;
-  if(sel.length < I.k_min){
-    sel = Array.from(d.keys()).sort((a,b)=>d[a]-d[b]).slice(0, I.k_min);
-  }
+  // Nothing within eps means there is no matched set. Substituting the k
+  // nearest would answer a different question -- "which are closest" rather
+  // than "which cannot be told apart" -- with bars that look the same, so
+  // the page reports the emptiness instead.
+  if(!sel.length) return {sel, stats: null, q, best, within: 0};
   const pct = (v,p) => {
     const t = (v.length-1)*p/100, lo = Math.floor(t), f = t-lo;
     return lo+1 < v.length ? (1-f)*v[lo] + f*v[lo+1] : v[lo];
@@ -548,7 +549,7 @@ function inverseFrom(q){
     const v = sel.map(i => IU[i*4+j]).sort((a,b)=>a-b);
     return {name, lo: pct(v,5), mid: pct(v,50), hi: pct(v,95)};
   });
-  return {sel, stats, q, best, within};
+  return {sel, stats, q, best, within: sel.length};
 }
 
 // the true value of the query, on the same 0..1 scale the bars use. A sketch
@@ -739,6 +740,24 @@ function readoutPred(p, near){
 
 function readoutInv(inv){
   if(!inv) return;
+  if(!inv.stats){
+    $("ro").innerHTML = '<tr><td class="cmp">&mdash;</td><td>no deposit in '
+      + 'the design is this close</td></tr>';
+    const e = $("flag");
+    e.className = "flag on";
+    e.innerHTML = "<b>Nothing in the design is within " + EPSCM() + " cm of "
+      + (sketch ? "your drawing" : "this deposit") + ".</b> The closest of the "
+      + "3420 simulations is " + (inv.best*100).toFixed(1) + " cm away, so "
+      + "there is no set of deposits that cannot be told apart and nothing to "
+      + "report. "
+      + (sketch
+         ? "Draw something the model can actually produce &mdash; a wedge "
+           + "thinning downstream, or a mound in the first half metre &mdash; "
+           + "or widen &epsilon;."
+         : "Widen &epsilon;: below about 1 cm no two deposits in the design "
+           + "are that close to one another, which is itself worth knowing.");
+    return;
+  }
   const bar = (j,s) => {
     const t = trueScaled(j), w = Math.max(s.hi-s.lo, 0.004);
     return '<tr><td>' + KEYS[j].sym + '<small>' + KEYS[j].name + '</small></td>'
@@ -763,38 +782,18 @@ function readoutInv(inv){
     + nameOf(worst) + " spans " + ((worst.hi-worst.lo)*100).toFixed(0) + "%. ";
   const f = $("flag");
   f.className = "flag on";
-  if(!sketch && inv.within >= I.k_min){
+  if(!sketch){
     f.innerHTML = "<b>" + inv.within + " simulations produce this deposit "
       + "to within " + EPSCM() + " cm.</b> Across them " + spread
       + "The blue tick is the median of the matches, the dark tick the value "
       + "that actually produced it. This is an example deposit, the middle "
       + "level of each parameter; draw on the canvas to ask about a shape of "
       + "your own.";
-  }else if(!sketch){
-    // the tolerance is now tighter than the spacing of the design itself
-    f.innerHTML = "<b>" + (inv.within ? "Only " + inv.within : "None")
-      + " of the 3420 simulations come "
-      + "within " + EPSCM() + " cm of this deposit</b>, so the "
-      + inv.sel.length + " nearest are shown instead, the closest "
-      + (inv.best*100).toFixed(1) + " cm away. The bars below describe those "
-      + inv.sel.length + " cases, not what the shape determines &mdash; they "
-      + "are narrow because the set is small. That is what a tolerance well "
-      + "below the emulator's own error buys: widen &epsilon; and they start "
-      + "meaning something again.";
-  }else if(inv.within > 0){
+  }else{
     f.innerHTML = "<b>" + inv.within + " simulations match your drawing to "
       + "within " + EPSCM() + " cm</b> (closest: "
       + (inv.best*100).toFixed(1) + " cm). " + spread
       + "There is no dark tick because a drawing has no true answer.";
-  }else{
-    f.innerHTML = "<b>Nothing in the design looks much like this.</b> The "
-      + "closest of the 3420 simulations is " + (inv.best*100).toFixed(1)
-      + " cm away, against the " + EPSCM() + " cm that counts as a match, so "
-      + "the " + inv.sel.length + " nearest are shown instead and the bars "
-      + "below say more about where the design has points than about your "
-      + "shape. Draw something the model can actually produce &mdash; a wedge "
-      + "thinning downstream, or a mound in the first half metre &mdash; and "
-      + "the match will tighten.";
   }
 }
 boot();
