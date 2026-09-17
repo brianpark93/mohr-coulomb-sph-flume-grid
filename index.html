@@ -125,6 +125,7 @@ const NSTEP = 240;                    // slider resolution in prediction mode
 let D, P, N, S, XT, AL;               // grid data; surrogate header + weights
 let I, IS, IU;                        // inverse header, surfaces, parameters
 let sketch = null, sketching = false; // a hand-drawn deposit, if any
+let epsM = null;                      // match tolerance in metres, slider-driven
 let mode = "grid";
 let sel = [3,3,3,3];                  // grid mode: level indices
 let cont = [0.5,0.5,0.5,0.5];         // prediction mode: 0..1 along each range
@@ -172,6 +173,7 @@ async function boot(){
     I = h;
     IS = new Int16Array(w, 0, I.n*I.nx);                 // surfaces, mm
     IU = new Float32Array(w, I.n*I.nx*2, I.n*4);         // params on 0..1
+    epsM = I.eps_m;                                      // the slider's start
   }catch(e){ I = null; $("mode-inv").style.display = "none"; }
 
   $("boot").style.display="none"; $("app").style.display="";
@@ -189,10 +191,10 @@ async function boot(){
   };
   $("reset").onclick = () => {
     sel=[3,3,3,3]; cont=[0.5,0.5,0.5,0.5]; pinned=null; sketch=null;
-    sketching=false; $("sketch").classList.remove("active");
+    if(I) epsM = I.eps_m;
     $("pin").classList.remove("active");
     $("pin").textContent = "Pin this shape to compare";
-    buildSliders(); draw();
+    setMode(mode);     // re-applies the mode's own defaults, drawing included
   };
   $("sketch").onclick = () => {
     sketching = !sketching;
@@ -223,8 +225,19 @@ async function boot(){
 // an earlier version built the copy at load time and referenced EPSCM before
 // its own declaration, which threw a ReferenceError and left the page stuck
 // on "loading" with nothing in the console but that one line.
-const EPSCM = () => I ? (I.eps_m*100).toFixed(2) : "-";
+// EPSCM is the tolerance as it stands, so it belongs anywhere redrawn on
+// every frame; EPSDEF is the shipped default, for copy that is written
+// once when a mode is entered and would otherwise go stale under the slider.
+const EPSCM  = () => epsM ? (epsM*100).toFixed(2) : "-";
+const EPSDEF = () => I ? (I.eps_m*100).toFixed(2) : "-";
 const ERRCM = () => S ? (S.skill.surface_rmse_m*100).toFixed(1) : "-";
+// R^2 = 1 - (RMSE/RMSE_baseline)^2, the baseline being the mean deposit.
+// This is the figure the paper leads with: the deposit's own thickness
+// varies thirteenfold across the design, so a centimetre is not a fixed
+// amount of error and the dimensionless score is the comparable one.
+const BASECM = () => S ? (S.skill.surface_baseline_m*100).toFixed(1) : "-";
+const ERRR2 = () => S ? (1 - Math.pow(S.skill.surface_rmse_m
+                         / S.skill.surface_baseline_m, 2)).toFixed(2) : "-";
 const TOEPCT = () => S ? (S.x_min_tail.toe_fraction*100).toFixed(1) : "-";
 
 const MODETEXT = () => ({
@@ -238,16 +251,19 @@ const MODETEXT = () => ({
     + "seven steps. <b>Nothing here was solved</b> &mdash; it is what the "
     + "model predicts. The emulator was trained on 3420 space-filling "
     + "simulations and has never seen the grid, so the faint particles are "
-    + "an out-of-sample check on the prediction drawn over them.",
+    + "an out-of-sample check on the prediction drawn over them. Held out, it "
+    + "reconstructs the whole arrested surface at <b>R&sup2; = " + ERRR2()
+    + "</b>, and the scalar descriptors &mdash; footprint, runout, peak "
+    + "thickness &mdash; at 0.80 to 0.89.",
   inv:
-    "The question backwards. Pick a solved deposit with the sliders, then "
-    + "forget the parameters that made it: the panel on the right shows what "
-    + "could be recovered from the shape alone. Every one of the 3420 "
-    + "space-filling simulations whose surface lies within "
-    + EPSCM() + " cm of this one is collected &mdash; deposits that cannot be "
-    + "told apart &mdash; and the bars show the range of each parameter "
+    "The question backwards. <b>Draw a deposit on the canvas</b> and the panel "
+    + "on the right shows what could be recovered from that shape alone. Every "
+    + "one of the 3420 space-filling simulations whose surface lies within "
+    + "&epsilon; RMS of your profile is collected &mdash; deposits that cannot "
+    + "be told apart &mdash; and the bars show the range of each parameter "
     + "across them. <b>No model is involved</b>, so nothing here can be "
-    + "blamed on a regressor.",
+    + "blamed on a regressor. &epsilon; is yours to set; it starts at "
+    + EPSDEF() + " cm, which is the emulator's own held-out error.",
 });
 const SLIDERNOTE = () => ({
   grid: "Arrow keys step a slider once it has focus. A pinned shape stays on "
@@ -255,12 +271,14 @@ const SLIDERNOTE = () => ({
         + "parameter readable.",
   pred: "Sliders are continuous here. " + "G moves on a log scale, as it was "
         + "sampled.",
-  inv:  "The sliders choose the deposit to interrogate. A narrow bar on the "
-        + "right means the shape pins that parameter down; a bar spanning the "
-        + "track means it does not. <b>Draw a deposit</b> lets you sketch a "
-        + "profile on the canvas instead and ask the same question of it; "
-        + "there is then no true answer to compare against, and the panel "
-        + "reports how close the nearest simulation actually is.",
+  inv:  "Drag &epsilon; and watch the bars. Tight, and almost nothing counts "
+        + "as the same shape, so the bars narrow because they are describing "
+        + "three cases rather than because the deposit determines anything; "
+        + "loose, and most of the design matches and every bar fills its "
+        + "track. A narrow bar at a sensible &epsilon; means the shape pins "
+        + "that parameter down. Until you draw, an example solved deposit "
+        + "stands in, and its true parameters are marked so you can see what "
+        + "the method recovers and what it misses.",
 });
 
 function setMode(m){
@@ -272,7 +290,11 @@ function setMode(m){
   $("sketch").style.display = (m==="inv" && I) ? "" : "none";
   $("clearsketch").style.display = (m==="inv" && sketch) ? "" : "none";
   if(m!=="grid"){ pinned=null; $("pin").classList.remove("active"); }
-  if(m!=="inv"){ sketching=false; $("sketch").classList.remove("active"); }
+  // Inverse mode is about a shape, not about parameters: buildSliders puts
+  // the tolerance slider where the four parameter sliders were, and drawing
+  // starts switched on, because that is the only input the mode has.
+  if(m==="inv"){ sketching=true; $("sketch").classList.add("active"); }
+  else{ sketching=false; $("sketch").classList.remove("active"); }
   $("modetext").innerHTML = MODETEXT()[m];
   $("slidernote").innerHTML = SLIDERNOTE()[m];
   $("rohead").textContent = m==="grid" ? "This deposit"
@@ -288,8 +310,11 @@ function setMode(m){
       + 'is not drawn at all.'
     : m==="pred"
     ? '<span class="key" style="color:#2a78d6">&#9632;</span> the predicted '
-      + 'deposit surface, with a band at the emulator\'s held-out error of '
-      + ERRCM() + ' cm. It is drawn as a surface, not as particles, because a '
+      + 'deposit surface, with a band at the emulator\'s held-out error: '
+      + 'R&sup2; = ' + ERRR2() + ' on the surface, ' + ERRCM() + ' cm against '
+      + 'a ' + BASECM() + ' cm no-model baseline. The band is in centimetres '
+      + 'because it is a distance on this deposit; the score is what compares '
+      + 'across deposits. It is drawn as a surface, not as particles, because a '
       + 'placement plus a shape is all the emulator outputs. '
       + '<span class="key" style="color:#d8d4cc">&#9632;</span> the nearest '
       + 'solved grid cell, for comparison only.'
@@ -301,8 +326,9 @@ function setMode(m){
       + 'meaningful where the starting position would not be.'
     : '<b>The honest caveat.</b> The match is an RMS vertical difference '
       + 'between surfaces, and that measure is nearly blind to cohesion: '
-      + 'tightening it from 2.25 cm to 0.20 cm, which cuts the matched set '
-      + 'from about 310 cases to 3, leaves cohesion no better recovered, '
+      + 'tightening it from ' + EPSDEF() + ' cm to 0.20 cm &mdash; which the '
+      + '&epsilon; slider does, and which cuts the matched set '
+      + 'from about 310 cases to 3 &mdash; leaves cohesion no better recovered, '
       + 'while friction holds throughout. Cohesion\'s signature is surface '
       + 'texture rather than height, and a regressor given the envelope does '
       + 'recover it. So read a wide cohesion bar as <i>this criterion cannot '
@@ -317,7 +343,36 @@ function contValue(i){
 }
 const disp = (i,v) => KEYS[i].log ? v/1e6 : v;      // G is stored in Pa
 
+// The tolerance is an argument, not a constant, so it is a control. Moving
+// it is the only way to see what the default is worth: at 0.2 cm three
+// deposits count as the same shape and the bars are narrow because they
+// describe three cases, not because the shape determines anything; at 6 cm
+// most of the design matches and every bar spans its track. The default,
+// 2.25 cm, is the emulator's own held-out error -- the distance at which the
+// model itself cannot tell two deposits apart -- and that is a fact about the
+// model rather than a choice, which is visible only once it can be moved.
+function buildEpsSlider(){
+  $("sliders").innerHTML =
+      '<div class="row">'
+    + '<div class="lab"><span class="sym">&epsilon;<small>two deposits count '
+    + 'as the same shape within this</small></span>'
+    + '<span class="val" id="veps"></span></div>'
+    + '<input type="range" min="2" max="60" step="0.5" value="'
+    + (epsM*1000).toFixed(1) + '" id="seps">'
+    + '<div class="ticks"><span>0.2 cm</span><span>6.0 cm</span></div></div>';
+  $("seps").addEventListener("input", e => {
+    epsM = (+e.target.value)/1000; syncEps(); draw();
+  });
+  syncEps();
+}
+function syncEps(){
+  const atDefault = Math.abs(epsM - I.eps_m) < 2.6e-4;
+  $("veps").innerHTML = (epsM*100).toFixed(2) + " cm"
+    + (atDefault ? ' <small>= the emulator\'s own error</small>' : '');
+}
+
 function buildSliders(){
+  if(mode==="inv"){ buildEpsSlider(); return; }
   $("sliders").innerHTML = KEYS.map((p,i)=>{
     let lo, hi, max, val;
     if(mode!=="pred"){
@@ -480,7 +535,7 @@ function inverseFrom(q){
   }
   let sel = [], best = Infinity;
   for(let i=0;i<I.n;i++){ if(d[i] < best) best = d[i];
-                          if(d[i] < I.eps_m) sel.push(i); }
+                          if(d[i] < epsM) sel.push(i); }
   const within = sel.length;
   if(sel.length < I.k_min){
     sel = Array.from(d.keys()).sort((a,b)=>d[a]-d[b]).slice(0, I.k_min);
@@ -708,11 +763,24 @@ function readoutInv(inv){
     + nameOf(worst) + " spans " + ((worst.hi-worst.lo)*100).toFixed(0) + "%. ";
   const f = $("flag");
   f.className = "flag on";
-  if(!sketch){
+  if(!sketch && inv.within >= I.k_min){
     f.innerHTML = "<b>" + inv.within + " simulations produce this deposit "
       + "to within " + EPSCM() + " cm.</b> Across them " + spread
       + "The blue tick is the median of the matches, the dark tick the value "
-      + "that actually produced this deposit.";
+      + "that actually produced it. This is an example deposit, the middle "
+      + "level of each parameter; draw on the canvas to ask about a shape of "
+      + "your own.";
+  }else if(!sketch){
+    // the tolerance is now tighter than the spacing of the design itself
+    f.innerHTML = "<b>" + (inv.within ? "Only " + inv.within : "None")
+      + " of the 3420 simulations come "
+      + "within " + EPSCM() + " cm of this deposit</b>, so the "
+      + inv.sel.length + " nearest are shown instead, the closest "
+      + (inv.best*100).toFixed(1) + " cm away. The bars below describe those "
+      + inv.sel.length + " cases, not what the shape determines &mdash; they "
+      + "are narrow because the set is small. That is what a tolerance well "
+      + "below the emulator's own error buys: widen &epsilon; and they start "
+      + "meaning something again.";
   }else if(inv.within > 0){
     f.innerHTML = "<b>" + inv.within + " simulations match your drawing to "
       + "within " + EPSCM() + " cm</b> (closest: "
