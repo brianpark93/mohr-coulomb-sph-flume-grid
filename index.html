@@ -68,6 +68,8 @@
   .tick.mid{background:var(--pred)}
   .tick.tru{background:var(--ink)}
   td .track{margin:2px 0}
+  td.leg{color:var(--muted);font-size:13px;font-weight:400;
+         text-align:left;padding-top:10px;line-height:1.5}
   .note{color:var(--muted);font-size:14.5px;line-height:1.55;margin-top:14px}
   .key{font-size:17px;line-height:1}
   .load{padding:50px 20px;text-align:center;color:var(--muted)}
@@ -256,9 +258,11 @@ const MODETEXT = () => ({
     + "out, it reaches <b>R&sup2; = " + ERRR2() + "</b> on the surface.",
   inv:
     "<b>Draw a deposit</b> and the panel on the right shows what the shape "
-    + "alone can tell you: every simulation whose surface sits within "
-    + "&epsilon; of it, and how widely each parameter ranges across them. "
-    + "<b>No model is involved.</b>",
+    + "alone can tell you. The page searches <b>3420 simulations solved for "
+    + "this study</b> &mdash; a separate space-filling set, not the 2401-case "
+    + "grid of the first tab &mdash; and collects every one whose surface "
+    + "sits within &epsilon; of your profile. <b>Nothing here is generated, "
+    + "and no model is involved.</b>",
 });
 const SLIDERNOTE = () => ({
   grid: "Arrow keys step a slider. Pin a shape to compare against.",
@@ -299,7 +303,12 @@ function setMode(m){
       + '<span class="key" style="color:#d8d4cc">&#9632;</span> the nearest '
       + 'solved grid cell. The back edge is drawn at the slope toe, where '
       + TOEPCT() + '% of solved runs put it.'
-    : '<b>Caveat.</b> Similarity here is an RMS height difference, which is '
+    : '<span class="key" style="color:#2a78d6">&#9632;</span> the matching '
+      + 'deposits, drawn over one another &mdash; up to sixty of them, each '
+      + 'one a solved simulation. '
+      + '<span class="key" style="color:#c9a08a">&#9632;</span> the shape '
+      + 'being asked about.<br><br>'
+      + '<b>Caveat.</b> Similarity here is an RMS height difference, which is '
       + 'nearly blind to cohesion. Read a wide cohesion bar as <i>this '
       + 'measure cannot see it</i>, not as <i>the deposit does not contain '
       + 'it</i>.';
@@ -338,7 +347,7 @@ function syncEps(inv){
   const n = inv ? inv.within : 0;
   $("veps").innerHTML = EPSCM() + " cm"
     + ' <small>' + (epsAuto ? "tightest that matches one"
-                              : n + " of 3420") + '</small>';
+                              : n + " of 3420 solved") + '</small>';
 }
 
 function buildSliders(){
@@ -749,9 +758,17 @@ function readoutInv(inv){
   $("ro").innerHTML =
       '<tr><td></td><td class="cmp">width</td><td>'
     + (one ? 'the single closest simulation'
-           : '5&ndash;95% of the ' + inv.sel.length + ' matches')
+           : 'across the ' + inv.sel.length + ' matching simulations')
     + '</td></tr>'
-    + inv.stats.map((s,j)=>bar(j,s)).join("");
+    + inv.stats.map((s,j)=>bar(j,s)).join("")
+    + '<tr><td class="leg" colspan="3">'
+    + (one
+       ? 'Each mark is that one simulation\'s value.'
+       : 'The band is where the middle \u005b5&ndash;95\u005d per cent of the '
+         + 'matches lie, and the line inside it is their median'
+         + (sketch ? '.' : '; the dark line is the value that really '
+                          + 'produced this deposit.'))
+    + '</td></tr>';
   // with one match every bar has zero width, so the sentence that compares
   // the narrowest with the widest has nothing to compare
   let spread = "";
