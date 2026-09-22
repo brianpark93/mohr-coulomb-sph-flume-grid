@@ -127,7 +127,8 @@ const NSTEP = 240;                    // slider resolution in prediction mode
 let D, P, N, S, XT, AL;               // grid data; surrogate header + weights
 let I, IS, IU;                        // inverse header, surfaces, parameters
 let sketch = null, sketching = false; // a hand-drawn deposit, if any
-let kNb = null;                       // how many nearest deposits to use
+let epsM = null;                      // match tolerance, m; null = auto
+let epsAuto = true;                   // until the reader moves the slider
 let mode = "grid";
 let sel = [3,3,3,3];                  // grid mode: level indices
 let cont = [0.5,0.5,0.5,0.5];         // prediction mode: 0..1 along each range
@@ -175,7 +176,7 @@ async function boot(){
     I = h;
     IS = new Int16Array(w, 0, I.n*I.nx);                 // surfaces, mm
     IU = new Float32Array(w, I.n*I.nx*2, I.n*4);         // params on 0..1
-    kNb = I.k_default;                                   // the slider's start
+    epsM = null;                                         // auto on entry
   }catch(e){ I = null; $("mode-inv").style.display = "none"; }
 
   $("boot").style.display="none"; $("app").style.display="";
@@ -193,7 +194,7 @@ async function boot(){
   };
   $("reset").onclick = () => {
     sel=[3,3,3,3]; cont=[0.5,0.5,0.5,0.5]; pinned=null; sketch=null;
-    if(I) kNb = I.k_default;
+    epsM = null; epsAuto = true;
     $("pin").classList.remove("active");
     $("pin").textContent = "Pin this shape to compare";
     setMode(mode);     // re-applies the mode's own defaults, drawing included
@@ -231,6 +232,10 @@ async function boot(){
 // "nothing resembles this" a statement about the data rather than a
 // threshold in centimetres that would have to be defended.
 const NNCM = () => I ? (I.nn_p95_m*100).toFixed(1) : "-";
+const EPSCM = () => epsM ? (epsM*100).toFixed(2) : "-";
+// the tightest setting that still matches something, rounded up to a step the
+// slider can actually land on
+const snapUp = m => Math.ceil(m*100/0.05 - 1e-9)*0.05/100;
 const ERRCM = () => S ? (S.skill.surface_rmse_m*100).toFixed(1) : "-";
 // R^2 = 1 - (RMSE/RMSE_baseline)^2, the baseline being the mean deposit.
 // This is the figure the paper leads with: the deposit's own thickness
@@ -251,14 +256,16 @@ const MODETEXT = () => ({
     + "out, it reaches <b>R&sup2; = " + ERRR2() + "</b> on the surface.",
   inv:
     "<b>Draw a deposit</b> and the panel on the right shows what the shape "
-    + "alone can tell you: the k simulations most like it, and how widely "
-    + "each parameter ranges across them. <b>No model is involved.</b>",
+    + "alone can tell you: every simulation whose surface sits within "
+    + "&epsilon; of it, and how widely each parameter ranges across them. "
+    + "<b>No model is involved.</b>",
 });
 const SLIDERNOTE = () => ({
   grid: "Arrow keys step a slider. Pin a shape to compare against.",
   pred: "Sliders are continuous; G is on a log scale.",
-  inv:  "Drag k and watch the bars: the ranking does not change. Until you "
-        + "draw, an example deposit stands in.",
+  inv:  "&epsilon; starts at the tightest value that matches anything at "
+        + "all. Open it up and watch the bars widen; the ranking does not "
+        + "change. Until you draw, an example deposit stands in.",
 });
 
 function setMode(m){
@@ -306,32 +313,36 @@ function contValue(i){
 }
 const disp = (i,v) => KEYS[i].log ? v/1e6 : v;      // G is stored in Pa
 
-// How many of the most similar deposits to look at. A count, not a distance:
-// a distance would have to be justified in centimetres against something, and
-// the only scale available is how densely this design happens to sample the
-// space of deposits. Moving it shows that the answer does not turn on the
-// choice -- friction stays the narrowest bar from ten neighbours to a
-// thousand.
-function buildKSlider(){
+// How close two deposits have to be to count as the same shape. The value is
+// not ours to pick: it starts at the tightest setting that matches anything at
+// all, which the query itself decides, and the reader opens it from there.
+function buildEpsSlider(){
   $("sliders").innerHTML =
       '<div class="row">'
-    + '<div class="lab"><span class="sym">k<small>most similar deposits'
-    + '</small></span>'
-    + '<span class="val" id="vk"></span></div>'
-    + '<input type="range" min="10" max="1000" step="10" value="'
-    + kNb + '" id="sk">'
-    + '<div class="ticks"><span>10</span><span>1000 of 3420</span></div></div>';
-  $("sk").addEventListener("input", e => {
-    kNb = +e.target.value; syncK(); draw();
+    + '<div class="lab"><span class="sym">&epsilon;<small>how close counts as '
+    + 'the same shape</small></span>'
+    + '<span class="val" id="veps"></span></div>'
+    + '<input type="range" min="0.05" max="6" step="0.05" value="'
+    + ((epsM || 0.02)*100).toFixed(2) + '" id="seps">'
+    + '<div class="ticks"><span>tightest</span><span>6 cm</span></div></div>';
+  $("seps").addEventListener("input", e => {
+    epsM = (+e.target.value)/100; epsAuto = false; draw();
   });
-  syncK();
+  syncEps(null);
 }
-function syncK(){
-  $("vk").innerHTML = kNb + ' <small>of 3420</small>';
+// called after every draw, because the auto value depends on the query and
+// the number of matches depends on the value
+function syncEps(inv){
+  if(!$("seps")) return;
+  $("seps").value = (epsM*100).toFixed(2);
+  const n = inv ? inv.within : 0;
+  $("veps").innerHTML = EPSCM() + " cm"
+    + ' <small>' + (epsAuto ? "tightest that matches one"
+                              : n + " of 3420") + '</small>';
 }
 
 function buildSliders(){
-  if(mode==="inv"){ buildKSlider(); return; }
+  if(mode==="inv"){ buildEpsSlider(); return; }
   $("sliders").innerHTML = KEYS.map((p,i)=>{
     let lo, hi, max, val;
     if(mode!=="pred"){
@@ -492,14 +503,19 @@ function inverseFrom(q){
     for(let k=0;k<nx;k++){ const t = IS[o+k]/1000 - q[k]; s += t*t; }
     d[i] = Math.sqrt(s/nx);
   }
-  // the k most similar, by partial order on the distances
-  const idxs = Array.from(d.keys()).sort((a,b)=>d[a]-d[b]);
-  const sel = idxs.slice(0, Math.min(kNb, I.n));
-  const best = d[idxs[0]];
+  let best = Infinity;
+  for(let i=0;i<I.n;i++) if(d[i] < best) best = d[i];
+  // Auto: the tightest tolerance that matches anything at all, which is the
+  // distance to the single most similar simulation. It follows the query
+  // until the reader takes the slider over.
+  if(epsAuto) epsM = snapUp(best);
+  const sel = [];
+  for(let i=0;i<I.n;i++) if(d[i] <= epsM) sel.push(i);
   // Outside what the design covers: the closest case is farther from this
-  // shape than a design deposit typically sits from its own neighbour, so
-  // the neighbours are not neighbours in any useful sense.
-  if(best > I.nn_p95_m * 4) return {sel, stats: null, q, best, within: 0};
+  // shape than a design deposit sits from its own nearest neighbour, so
+  // whatever comes back is not a neighbourhood in any useful sense.
+  if(!sel.length || best > I.nn_p95_m * 4)
+    return {sel: [], stats: null, q, best, within: 0};
   const pct = (v,p) => {
     const t = (v.length-1)*p/100, lo = Math.floor(t), f = t-lo;
     return lo+1 < v.length ? (1-f)*v[lo] + f*v[lo+1] : v[lo];
@@ -508,7 +524,9 @@ function inverseFrom(q){
     const v = sel.map(i => IU[i*4+j]).sort((a,b)=>a-b);
     return {name, lo: pct(v,5), mid: pct(v,50), hi: pct(v,95)};
   });
-  return {sel, stats, q, best, within: sel.length, reach: d[sel[sel.length-1]]};
+  let reach = 0;
+  for(const i of sel) if(d[i] > reach) reach = d[i];
+  return {sel, stats, q, best, within: sel.length, reach};
 }
 
 // the true value of the query, on the same 0..1 scale the bars use. A sketch
@@ -576,7 +594,7 @@ function draw(){
 
   if(mode==="grid") readoutGrid(D.cases[idx(sel)]);
   else if(mode==="pred") readoutPred(pred, near);
-  else readoutInv(inv);
+  else { readoutInv(inv); syncEps(inv); }
 }
 
 // every deposit that could not be told apart from this one, drawn together:
@@ -704,12 +722,13 @@ function readoutInv(inv){
       + 'the design is this close</td></tr>';
     const e = $("flag");
     e.className = "flag on";
-    e.innerHTML = "<b>Nothing in the design resembles this.</b> The closest "
-      + "of the 3420 simulations is " + (inv.best*100).toFixed(1) + " cm away, "
-      + "while a simulated deposit sits within " + NNCM() + " cm of its own "
-      + "nearest neighbour, so these are not neighbours in any useful sense. "
+    e.innerHTML = "<b>Nothing in the design is within " + EPSCM() + " cm of "
+      + (sketch ? "your drawing" : "this deposit") + ".</b> The closest of the "
+      + "3420 simulations is " + (inv.best*100).toFixed(1) + " cm away, "
+      + "against the " + NNCM() + " cm a simulated deposit sits from its own "
+      + "nearest neighbour. "
       + (sketch ? "Try a wedge thinning downstream, or a mound near the toe."
-                : "");
+                : "Open &epsilon; up.");
     return;
   }
   const bar = (j,s) => {
@@ -725,27 +744,42 @@ function readoutInv(inv){
           : '<div class="tick tru" style="left:' + (t*100) + '%"></div>')
       + '</div></td></tr>';
   };
+  const one = inv.sel.length < 2;
+  const plural = n => n + (n === 1 ? " simulation" : " simulations");
   $("ro").innerHTML =
       '<tr><td></td><td class="cmp">width</td><td>'
-    + '5&ndash;95% of the ' + inv.sel.length + ' matches</td></tr>'
+    + (one ? 'the single closest simulation'
+           : '5&ndash;95% of the ' + inv.sel.length + ' matches')
+    + '</td></tr>'
     + inv.stats.map((s,j)=>bar(j,s)).join("");
-  const worst = inv.stats.reduce((a,b)=>(b.hi-b.lo)>(a.hi-a.lo)?b:a);
-  const best  = inv.stats.reduce((a,b)=>(b.hi-b.lo)<(a.hi-a.lo)?b:a);
-  const nameOf = k => KEYS[I.params.indexOf(k.name)].sym;
-  const spread = nameOf(best) + " is pinned to "
-    + ((best.hi-best.lo)*100).toFixed(0) + "% of its range while "
-    + nameOf(worst) + " spans " + ((worst.hi-worst.lo)*100).toFixed(0) + "%. ";
+  // with one match every bar has zero width, so the sentence that compares
+  // the narrowest with the widest has nothing to compare
+  let spread = "";
+  if(!one){
+    const worst = inv.stats.reduce((a,b)=>(b.hi-b.lo)>(a.hi-a.lo)?b:a);
+    const best  = inv.stats.reduce((a,b)=>(b.hi-b.lo)<(a.hi-a.lo)?b:a);
+    const nameOf = k => KEYS[I.params.indexOf(k.name)].sym;
+    spread = nameOf(best) + " is pinned to "
+      + ((best.hi-best.lo)*100).toFixed(0) + "% of its range while "
+      + nameOf(worst) + " spans " + ((worst.hi-worst.lo)*100).toFixed(0) + "%. ";
+  }
   const f = $("flag");
   f.className = "flag on";
-  if(!sketch){
-    f.innerHTML = "<b>The " + inv.within + " deposits most like this one "
-      + "reach out to " + (inv.reach*100).toFixed(1) + " cm.</b> " + spread
+  if(one){
+    f.innerHTML = "<b>&epsilon; is as tight as it goes: one simulation is "
+      + "within " + EPSCM() + " cm.</b> The ticks are its parameters &mdash; a "
+      + "single answer with no range to it. <b>Open &epsilon; up</b> and the "
+      + "bars spread out into everything else the shape allows, which is the "
+      + "thing worth looking at.";
+  }else if(!sketch){
+    f.innerHTML = "<b>" + plural(inv.within) + " produce this deposit "
+      + "to within " + EPSCM() + " cm.</b> " + spread
       + "Blue tick, the median of those; dark tick, the true value. "
       + "Draw on the canvas to ask about a shape of your own.";
   }else{
-    f.innerHTML = "<b>The " + inv.within + " simulations most like your "
-      + "drawing</b> run from " + (inv.best*100).toFixed(1) + " to "
-      + (inv.reach*100).toFixed(1) + " cm away. " + spread
+    f.innerHTML = "<b>" + plural(inv.within) + " match your drawing to "
+      + "within " + EPSCM() + " cm</b> (closest "
+      + (inv.best*100).toFixed(1) + " cm). " + spread
       + "No dark tick: a drawing has no true answer.";
   }
 }
