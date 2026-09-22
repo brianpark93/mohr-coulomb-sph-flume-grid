@@ -10,69 +10,120 @@
      corrupted that way. -->
 <style>
   :root{
-    --ink:#23211d; --muted:#6f6c66; --line:#d9d6cd; --grid:#ebe8e0;
-    --bg:#faf8f4; --panel:#fff; --sand:#c9a08a; --steel:#898781;
-    --deep:#1b3a6b; --warn:#a3231b; --context:#bdb5a6; --pred:#2a78d6;
+    /* chrome */
+    --ink:#1d1d1f; --muted:#6e6e73; --line:#d2d2d7; --hair:#f0f0f2;
+    --bg:#fbfbfd; --panel:#fff; --fill:#f5f5f7; --accent:#0071e3;
+    /* data: the figure's own language, unchanged */
+    --sand:#c9a08a; --steel:#43403b; --deep:#1b3a6b; --warn:#a3231b;
+    --context:#bdb5a6; --pred:#2a78d6; --grid:#e8e8ed;
   }
   *{box-sizing:border-box}
+  html{-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
   body{margin:0;background:var(--bg);color:var(--ink);
-       font:17px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
-  .page{max-width:1180px;margin:0 auto;padding:28px 20px 60px}
-  h1{font-size:26px;margin:0 0 4px;font-weight:650;letter-spacing:-.01em}
-  .sub{color:var(--muted);font-size:16px;margin:0 0 18px}
-  .sub a{color:var(--deep)}
-  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px}
-  .stage{padding:14px 16px 6px;margin-bottom:18px}
+       font:17px/1.55 -apple-system,BlinkMacSystemFont,"SF Pro Text",
+            "Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+       letter-spacing:-.01em}
+  .page{max-width:1120px;margin:0 auto;padding:56px 22px 88px}
+  h1{font-size:40px;line-height:1.1;margin:0 0 10px;font-weight:600;
+     letter-spacing:-.022em}
+  .sub{color:var(--muted);font-size:19px;line-height:1.45;margin:0 0 30px;
+       letter-spacing:-.012em}
+  .sub a{color:var(--accent);text-decoration:none}
+  .sub a:hover{text-decoration:underline}
+
+  .card{background:var(--panel);border-radius:18px;
+        box-shadow:0 1px 2px rgba(0,0,0,.05), 0 10px 30px rgba(0,0,0,.05)}
+  .stage{padding:18px 20px 10px;margin-bottom:22px}
   canvas{width:100%;display:block}
-  .layout{display:grid;grid-template-columns:1.25fr .75fr;gap:18px}
+  .layout{display:grid;grid-template-columns:1.25fr .75fr;gap:22px;
+          align-items:start}
   @media (max-width:860px){.layout{grid-template-columns:1fr}}
-  .pad{padding:16px 18px}
-  h2{font-size:14px;text-transform:uppercase;letter-spacing:.06em;
-     color:var(--muted);margin:0 0 14px;font-weight:600}
-  .row{margin-bottom:16px}
-  .row:last-child{margin-bottom:4px}
+  .pad{padding:22px 24px}
+  h2{font-size:12px;text-transform:uppercase;letter-spacing:.07em;
+     color:var(--muted);margin:0 0 18px;font-weight:590}
+
+  /* ---- the mode tabs, as a segmented control ---- */
+  .modes{display:inline-flex;gap:2px;margin:0 0 24px;padding:3px;
+         background:var(--fill);border-radius:980px}
+  .modes button{border:0;border-radius:980px;padding:9px 20px;font-size:15px;
+                font-weight:450;color:var(--ink);background:transparent;
+                letter-spacing:-.01em;transition:background .18s,box-shadow .18s}
+  .modes button:hover{background:rgba(0,0,0,.04)}
+  /* the generic button.active fills with blue and whitens its text; a
+     segmented control lifts the selected tab out of the trough instead, so
+     the colour has to be restated or the label disappears into the pill */
+  .modes button.active{background:#fff;color:var(--ink);font-weight:520;
+                       box-shadow:0 1px 3px rgba(0,0,0,.10)}
+  .modes button.active:hover{background:#fff}
+
+  /* ---- controls ---- */
+  .row{margin-bottom:22px}
+  .row:last-child{margin-bottom:6px}
   .lab{display:flex;justify-content:space-between;align-items:baseline;
-       margin-bottom:5px}
-  .sym{font-weight:600}
-  .sym small{font-weight:400;color:var(--muted);margin-left:6px}
-  .val{font-variant-numeric:tabular-nums;color:var(--deep);font-weight:600}
-  input[type=range]{width:100%;accent-color:var(--deep);margin:0}
-  .ticks{display:flex;justify-content:space-between;
-         color:var(--muted);font-variant-numeric:tabular-nums;margin-top:2px;
-         font-size:12px}
+       margin-bottom:9px}
+  .sym{font-weight:590}
+  .sym small{font-weight:400;color:var(--muted);margin-left:8px;
+             letter-spacing:0}
+  .val{font-variant-numeric:tabular-nums;color:var(--ink);font-weight:590}
+  .val small{color:var(--muted);font-weight:400;margin-left:6px}
+  .ticks{display:flex;justify-content:space-between;font-size:13px;
+         color:var(--muted);font-variant-numeric:tabular-nums;margin-top:8px}
+
+  input[type=range]{-webkit-appearance:none;appearance:none;width:100%;
+                    background:transparent;margin:0;height:22px}
+  input[type=range]::-webkit-slider-runnable-track{height:4px;border-radius:2px;
+                    background:var(--grid)}
+  input[type=range]::-moz-range-track{height:4px;border-radius:2px;
+                    background:var(--grid)}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;
+                    width:22px;height:22px;border-radius:50%;background:#fff;
+                    margin-top:-9px;border:.5px solid rgba(0,0,0,.08);
+                    box-shadow:0 1px 4px rgba(0,0,0,.18)}
+  input[type=range]::-moz-range-thumb{width:22px;height:22px;border-radius:50%;
+                    background:#fff;border:.5px solid rgba(0,0,0,.08);
+                    box-shadow:0 1px 4px rgba(0,0,0,.18)}
+  input[type=range]:focus{outline:none}
+  input[type=range]:focus::-webkit-slider-thumb{box-shadow:0 0 0 4px
+                    rgba(0,113,227,.25), 0 1px 4px rgba(0,0,0,.18)}
+
+  .btns{display:flex;gap:10px;margin-top:20px;flex-wrap:wrap}
+  button{font:inherit;font-size:15px;padding:9px 18px;border-radius:980px;
+         border:1px solid var(--line);background:#fff;color:var(--ink);
+         cursor:pointer;letter-spacing:-.01em;transition:background .18s,
+         border-color .18s,color .18s}
+  button:hover{background:var(--fill)}
+  button.active{background:var(--accent);border-color:var(--accent);color:#fff}
+  button.active:hover{background:#0077ed}
+
+  /* ---- readout ---- */
   table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
-  td{padding:7px 0;border-bottom:1px solid var(--grid);font-size:16px}
-  td:last-child{text-align:right;font-weight:600}
-  td.cmp{text-align:right;font-weight:400;color:var(--muted);width:4.2em}
+  td{padding:11px 0;border-bottom:1px solid var(--hair);font-size:16px}
+  td:last-child{text-align:right;font-weight:590}
+  td.cmp{text-align:right;font-weight:400;color:var(--muted);width:6.5em;
+         padding-right:16px;white-space:nowrap}
   td.par{white-space:nowrap;width:1%}
   tr:last-child td{border-bottom:none}
-  .flag{margin-top:16px;padding:12px 14px;border-radius:7px;font-size:15px;
-        line-height:1.5;display:none}
-  .flag.on{display:block;background:#fdf0ee;border:1px solid #f0cdc7;
-           color:var(--warn)}
-  .btns{display:flex;gap:8px;margin-top:16px;flex-wrap:wrap}
-  button{font:inherit;font-size:15px;padding:9px 14px;border-radius:7px;
-         border:1px solid var(--line);background:#fff;color:var(--ink);
-         cursor:pointer}
-  button:hover{border-color:var(--muted)}
-  button.active{background:var(--deep);border-color:var(--deep);color:#fff}
-  .modes{display:flex;gap:0;margin:0 0 18px;border:1px solid var(--line);
-         border-radius:8px;overflow:hidden;width:fit-content}
-  .modes button{border:0;border-radius:0;padding:10px 18px;font-size:15.5px}
-  .modes button+button{border-left:1px solid var(--line)}
-  .track{position:relative;height:16px;border-radius:4px;background:var(--grid);
+  td.leg{color:var(--muted);font-size:13.5px;font-weight:400;
+         text-align:left;padding-top:14px;line-height:1.55}
+
+  .track{position:relative;height:14px;border-radius:999px;background:var(--grid);
          width:100%;min-width:100px}
-  .span{position:absolute;top:0;height:16px;border-radius:4px;
-        background:rgba(42,120,214,.30)}
-  .tick{position:absolute;top:-2px;width:2px;height:20px;margin-left:-1px}
-  .tick.mid{background:var(--pred)}
+  .span{position:absolute;top:0;height:14px;border-radius:999px;
+        background:rgba(0,113,227,.26)}
+  .tick{position:absolute;top:-3px;width:2px;height:20px;margin-left:-1px;
+        border-radius:1px}
+  .tick.mid{background:var(--accent)}
   .tick.tru{background:var(--ink)}
-  td .track{margin:2px 0}
-  td.leg{color:var(--muted);font-size:13px;font-weight:400;
-         text-align:left;padding-top:10px;line-height:1.5}
-  .note{color:var(--muted);font-size:14.5px;line-height:1.55;margin-top:14px}
+  td .track{margin:3px 0}
+
+  .flag{margin-top:20px;padding:16px 18px;border-radius:14px;font-size:15px;
+        line-height:1.55;display:none}
+  .flag.on{display:block;background:var(--fill);color:var(--ink)}
+  .flag b{font-weight:590}
+
+  .note{color:var(--muted);font-size:14.5px;line-height:1.6;margin-top:18px}
   .key{font-size:17px;line-height:1}
-  .load{padding:50px 20px;text-align:center;color:var(--muted)}
+  .load{padding:72px 20px;text-align:center;color:var(--muted);font-size:17px}
 </style>
 </head>
 <body>
