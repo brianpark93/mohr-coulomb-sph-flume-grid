@@ -127,10 +127,8 @@ const KEYS = [
 const NSTEP = 240;                    // slider resolution in prediction mode
 
 let D, P, N, S, XT, AL;               // grid data; surrogate header + weights
-let I, IS, IU;                        // inverse header, surfaces, parameters
+let IF, IFA;                          // inverse forests: header, packed trees
 let sketch = null, sketching = false; // a hand-drawn deposit, if any
-let epsM = null;                      // match tolerance, m; null = auto
-let epsAuto = true;                   // until the reader moves the slider
 let mode = "grid";
 let sel = [3,3,3,3];                  // grid mode: level indices
 let cont = [0.5,0.5,0.5,0.5];         // prediction mode: 0..1 along each range
@@ -169,17 +167,37 @@ async function boot(){
     XT = all.subarray(0, S.n_train*S.n_feat);
     AL = all.subarray(S.n_train*S.n_feat);
   }catch(e){ S = null; $("mode-pred").style.display = "none"; }
-  // the inverse data is optional in the same way
+  // the inverse regressor is optional in the same way
   try{
     const [h, w] = await Promise.all([
-      fetch("inverse.json").then(r=>{if(!r.ok)throw 0; return r.json()}),
-      fetch("inverse.bin").then(r=>{if(!r.ok)throw 0; return r.arrayBuffer()})
+      fetch("invforest.json").then(r=>{if(!r.ok)throw 0; return r.json()}),
+      fetch("invforest.bin").then(r=>{if(!r.ok)throw 0; return r.arrayBuffer()})
     ]);
-    I = h;
-    IS = new Int16Array(w, 0, I.n*I.nx);                 // surfaces, mm
-    IU = new Float32Array(w, I.n*I.nx*2, I.n*4);         // params on 0..1
-    epsM = null;                                         // auto on entry
-  }catch(e){ I = null; $("mode-inv").style.display = "none"; }
+    IF = h;
+    const TYPE = {"|u1":Uint8Array, "<u2":Uint16Array,
+                  "<u4":Uint32Array, "<f4":Float32Array};
+    IFA = {};
+    for(const tag of ["shape","coh"]){
+      const a = {};
+      for(const nm of Object.keys(h.layout[tag])){
+        const sp = h.layout[tag][nm];
+        a[nm] = new TYPE[sp.dtype](w, sp.offset,
+                                   sp.shape.reduce((p,q)=>p*q, 1));
+      }
+      a.nout = h.layout[tag].value.shape[1];
+      // where each tree's leaves begin. Counted once here rather than on
+      // every prediction, which would make the walk O(nodes) instead of
+      // O(depth) and there are forty thousand nodes.
+      a.leafBase = new Uint32Array(a.offset.length);
+      let base = 0;
+      for(let k=0;k<a.offset.length;k++){
+        a.leafBase[k] = base;
+        const o = a.offset[k], n = a.count[k];
+        for(let j=0;j<n;j++) if(a.feat[o+j] === 255) base++;
+      }
+      IFA[tag] = a;
+    }
+  }catch(e){ IF = null; $("mode-inv").style.display = "none"; }
 
   $("boot").style.display="none"; $("app").style.display="";
   $("mode-grid").onclick = () => setMode("grid");
@@ -196,7 +214,6 @@ async function boot(){
   };
   $("reset").onclick = () => {
     sel=[3,3,3,3]; cont=[0.5,0.5,0.5,0.5]; pinned=null; sketch=null;
-    epsM = null; epsAuto = true;
     $("pin").classList.remove("active");
     $("pin").textContent = "Pin this shape to compare";
     setMode(mode);     // re-applies the mode's own defaults, drawing included
@@ -230,14 +247,8 @@ async function boot(){
 // an earlier version built the copy at load time and referenced one of them
 // before its own declaration, which threw a ReferenceError and left the page
 // stuck on "loading" with nothing in the console but that one line.
-// The design's own nearest-neighbour spacing, which is what makes
-// "nothing resembles this" a statement about the data rather than a
-// threshold in centimetres that would have to be defended.
-const NNCM = () => I ? (I.nn_p95_m*100).toFixed(1) : "-";
-const EPSCM = () => epsM ? (epsM*100).toFixed(2) : "-";
-// the tightest setting that still matches something, rounded up to a step the
-// slider can actually land on
-const snapUp = m => Math.ceil(m*100/0.05 - 1e-9)*0.05/100;
+// how well each parameter is recovered, out of sample on the 2401-case grid
+const R2OF = k => IF ? IF.skill.grid[k].toFixed(2) : "-";
 const ERRCM = () => S ? (S.skill.surface_rmse_m*100).toFixed(1) : "-";
 // R^2 = 1 - (RMSE/RMSE_baseline)^2, the baseline being the mean deposit.
 // This is the figure the paper leads with: the deposit's own thickness
@@ -257,19 +268,18 @@ const MODETEXT = () => ({
     + "so the sliders move continuously. <b>Nothing here was solved.</b> Held "
     + "out, it reaches <b>R&sup2; = " + ERRR2() + "</b> on the surface.",
   inv:
-    "<b>Draw a deposit</b> and the panel on the right shows what the shape "
-    + "alone can tell you. The page searches <b>3420 simulations solved for "
-    + "this study</b> &mdash; a separate space-filling set, not the 2401-case "
-    + "grid of the first tab &mdash; and collects every one whose surface "
-    + "sits within &epsilon; of your profile. <b>Nothing here is generated, "
-    + "and no model is involved.</b>",
+    "<b>Draw a deposit</b> and the four parameters that would produce it are "
+    + "computed from the shape alone. Two tree ensembles do it, trained on "
+    + "3420 solved simulations: friction, dilation and stiffness are read off "
+    + "the shape's leading modes, cohesion off the raw profile, because "
+    + "cohesion shows up as surface texture rather than as gross shape.",
 });
 const SLIDERNOTE = () => ({
   grid: "Arrow keys step a slider. Pin a shape to compare against.",
   pred: "Sliders are continuous; G is on a log scale.",
-  inv:  "&epsilon; starts at the tightest value that matches anything at "
-        + "all. Open it up and watch the bars widen; the ranking does not "
-        + "change. Until you draw, an example deposit stands in.",
+  inv:  "The answer is checked, not asserted: it goes back through the "
+        + "forward emulator and the deposit it produces is drawn over yours. "
+        + "Until you draw, an example deposit stands in.",
 });
 
 function setMode(m){
@@ -278,7 +288,7 @@ function setMode(m){
     $("mode-"+k).classList.toggle("active", m===k);
   $("pin").style.display = m==="grid" ? "" : "none";
   $("env").style.display = m==="inv" ? "none" : "";
-  $("sketch").style.display = (m==="inv" && I) ? "" : "none";
+  $("sketch").style.display = (m==="inv" && IF) ? "" : "none";
   $("clearsketch").style.display = (m==="inv" && sketch) ? "" : "none";
   if(m!=="grid"){ pinned=null; $("pin").classList.remove("active"); }
   // Inverse mode is about a shape, not about parameters: buildSliders puts
@@ -303,15 +313,13 @@ function setMode(m){
       + '<span class="key" style="color:#d8d4cc">&#9632;</span> the nearest '
       + 'solved grid cell. The back edge is drawn at the slope toe, where '
       + TOEPCT() + '% of solved runs put it.'
-    : '<span class="key" style="color:#2a78d6">&#9632;</span> the matching '
-      + 'deposits, drawn over one another &mdash; up to sixty of them, each '
-      + 'one a solved simulation. '
-      + '<span class="key" style="color:#c9a08a">&#9632;</span> the shape '
-      + 'being asked about.<br><br>'
-      + '<b>Caveat.</b> Similarity here is an RMS height difference, which is '
-      + 'nearly blind to cohesion. Read a wide cohesion bar as <i>this '
-      + 'measure cannot see it</i>, not as <i>the deposit does not contain '
-      + 'it</i>.';
+    : '<span class="key" style="color:#c9a08a">&#9632;</span> the shape '
+      + 'being asked about. '
+      + '<span class="key" style="color:#2a78d6">&#9632;</span> what the '
+      + 'recovered parameters produce when they are put back through the '
+      + 'forward emulator. The two should coincide; where they do not, the '
+      + 'shape is outside what the model can make and the numbers mean '
+      + 'little.';
   buildSliders(); draw();
 }
 
@@ -322,36 +330,16 @@ function contValue(i){
 }
 const disp = (i,v) => KEYS[i].log ? v/1e6 : v;      // G is stored in Pa
 
-// How close two deposits have to be to count as the same shape. The value is
-// not ours to pick: it starts at the tightest setting that matches anything at
-// all, which the query itself decides, and the reader opens it from there.
-function buildEpsSlider(){
+// Nothing to set here. In this view the parameters are the answer, not the
+// input, so the panel carries the buttons and says what is going on.
+function buildInvPanel(){
   $("sliders").innerHTML =
-      '<div class="row">'
-    + '<div class="lab"><span class="sym">&epsilon;<small>how close counts as '
-    + 'the same shape</small></span>'
-    + '<span class="val" id="veps"></span></div>'
-    + '<input type="range" min="0.05" max="6" step="0.05" value="'
-    + ((epsM || 0.02)*100).toFixed(2) + '" id="seps">'
-    + '<div class="ticks"><span>tightest</span><span>6 cm</span></div></div>';
-  $("seps").addEventListener("input", e => {
-    epsM = (+e.target.value)/100; epsAuto = false; draw();
-  });
-  syncEps(null);
-}
-// called after every draw, because the auto value depends on the query and
-// the number of matches depends on the value
-function syncEps(inv){
-  if(!$("seps")) return;
-  $("seps").value = (epsM*100).toFixed(2);
-  const n = inv ? inv.within : 0;
-  $("veps").innerHTML = EPSCM() + " cm"
-    + ' <small>' + (epsAuto ? "tightest that matches one"
-                              : n + " of 3420 solved") + '</small>';
+      '<p class="note" style="margin-top:0">The four parameters on the right '
+    + 'are computed from the shape alone. Redraw and they change.</p>';
 }
 
 function buildSliders(){
-  if(mode==="inv"){ buildEpsSlider(); return; }
+  if(mode==="inv"){ buildInvPanel(); return; }
   $("sliders").innerHTML = KEYS.map((p,i)=>{
     let lo, hi, max, val;
     if(mode!=="pred"){
@@ -412,8 +400,11 @@ function gpPredict(xs){
   return out;
 }
 
-function predictDeposit(){
-  const raw = KEYS.map((p,i)=>contValue(i));
+function predictDeposit(){ return predictFrom(KEYS.map((p,i)=>contValue(i))); }
+
+// the same forward prediction for parameters that did not come from the
+// sliders -- the inverse view puts its own answer back through this
+function predictFrom(raw){
   const xs = raw.map((v,i)=>(v - S.feat_mean[i]) / S.feat_scale[i]);
   const o = gpPredict(xs);
   const nb = S.n_bins, z = new Float64Array(nb);
@@ -452,15 +443,45 @@ function nearestCell(raw){
 // query and report the spread of each parameter across them. Those are
 // deposits that cannot be told apart, so whatever they disagree about is
 // what the deposit does not determine.
-function querySurface(c){
-  const z = new Float64Array(I.nx), n = c.z.length;
-  for(let k=0;k<I.nx;k++){
-    const x = k/(I.nx-1)*I.x_max, t = (x - c.xmin)/c.s;
-    if(t < 0 || t > 1){ z[k] = 0; continue; }
-    const u = t*(n-1), j = Math.min(n-2, Math.floor(u)), f = u-j;
-    z[k] = ((1-f)*c.z[j] + f*c.z[j+1]) / 1000;      // stored in mm
+// What a person measuring a deposit would have: the envelope on 40 bins
+// between its ends, where it starts, and how long it is. A solved case
+// carries all three already; a drawing has to be cut into them.
+function envOfCase(c){
+  const z = new Float64Array(IF.n_bins);
+  for(let b=0;b<IF.n_bins;b++) z[b] = c.z[b]/1000;    // stored in mm
+  return {z, xmin: c.xmin, s: c.s};
+}
+function envOfSketch(q){
+  const nx = IF.nx, dx = IF.x_max/(nx-1);
+  let i0 = -1, i1 = -1;
+  for(let i=0;i<nx;i++) if(q[i] > 0.001){ if(i0 < 0) i0 = i; i1 = i; }
+  if(i0 < 0 || i1 <= i0) return null;
+  const xmin = i0*dx, s = (i1-i0)*dx, nb = IF.n_bins;
+  const z = new Float64Array(nb);
+  for(let b=0;b<nb;b++){
+    const u = (xmin + s*b/(nb-1))/dx;
+    const j = Math.min(nx-2, Math.floor(u)), f = u-j;
+    const v = (1-f)*q[j] + f*q[j+1];
+    z[b] = v > 0 ? v : 0;
   }
-  return z;
+  return {z, xmin, s};
+}
+function shapeFeat(e){
+  const x = new Float64Array(IF.n_modes + 2);
+  for(let m=0;m<IF.n_modes;m++){
+    const cm = IF.pca_components[m];
+    let a = 0;
+    for(let b=0;b<IF.n_bins;b++) a += (e.z[b] - IF.pca_mean[b])*cm[b];
+    x[m] = a;
+  }
+  x[IF.n_modes] = e.xmin; x[IF.n_modes+1] = e.s;
+  return x;
+}
+function binFeat(e){
+  const x = new Float64Array(IF.n_bins + 2);
+  for(let b=0;b<IF.n_bins;b++) x[b] = e.z[b];
+  x[IF.n_bins] = e.xmin; x[IF.n_bins+1] = e.s;
+  return x;
 }
 
 // ---- drawing a deposit by hand -----------------------------------------
@@ -473,9 +494,9 @@ function sketchFromEvent(ev){
   const px = (ev.clientX - r.left), py = (ev.clientY - r.top);
   const x = AX.x0 + px / W * (AX.x1 - AX.x0);
   const z = Math.max(0, AX.z0 + (H - py) / H * (AX.z1 - AX.z0));
-  const k = Math.round(x / I.x_max * (I.nx - 1));
-  if(k < 0 || k >= I.nx) return;
-  if(!sketch){ sketch = new Float64Array(I.nx); sketch.fill(0); sketch._last = k; }
+  const k = Math.round(x / IF.x_max * (IF.nx - 1));
+  if(k < 0 || k >= IF.nx) return;
+  if(!sketch){ sketch = new Float64Array(IF.nx); sketch.fill(0); sketch._last = k; }
   // join up to the previous bin so a quick drag does not leave gaps
   const prev = (sketch._last == null) ? k : sketch._last;
   const lo = Math.min(prev, k), hi = Math.max(prev, k);
@@ -490,61 +511,79 @@ function sketchFromEvent(ev){
 function paintSketch(g,sx,sz,q){
   g.fillStyle = "rgba(201,160,138,.35)";
   g.beginPath(); g.moveTo(sx(0), sz(0));
-  for(let k=0;k<I.nx;k++) g.lineTo(sx(k/(I.nx-1)*I.x_max), sz(q[k]));
-  g.lineTo(sx(I.x_max), sz(0)); g.closePath(); g.fill();
+  for(let k=0;k<IF.nx;k++) g.lineTo(sx(k/(IF.nx-1)*IF.x_max), sz(q[k]));
+  g.lineTo(sx(IF.x_max), sz(0)); g.closePath(); g.fill();
   g.strokeStyle = "#8d6a53"; g.lineWidth = 2.4; g.beginPath();
-  for(let k=0;k<I.nx;k++){
-    const x = sx(k/(I.nx-1)*I.x_max), z = sz(q[k]);
+  for(let k=0;k<IF.nx;k++){
+    const x = sx(k/(IF.nx-1)*IF.x_max), z = sz(q[k]);
     k ? g.lineTo(x,z) : g.moveTo(x,z);
   }
   g.stroke();
 }
 
-function inverse(c){
-  return inverseFrom(querySurface(c));
-}
-
-function inverseFrom(q){
-  const nx = I.nx;
-  const d = new Float64Array(I.n);
-  for(let i=0;i<I.n;i++){
-    let s = 0, o = i*nx;
-    for(let k=0;k<nx;k++){ const t = IS[o+k]/1000 - q[k]; s += t*t; }
-    d[i] = Math.sqrt(s/nx);
+// One pass down each tree. The split threshold is stored as a uint16 over
+// that feature's own range and unpacked here, so the walk touches only the
+// nodes on its path rather than the forty thousand in the ensemble.
+function forestRuns(tag, x){
+  const a = IFA[tag], lo = IF[tag+"_lo"], hi = IF[tag+"_hi"], nout = a.nout;
+  const runs = [];
+  for(let k=0;k<a.offset.length;k++){
+    const o = a.offset[k];
+    let i = 0;
+    while(a.feat[o+i] !== 255){
+      const f = a.feat[o+i];
+      const span = hi[f] > lo[f] ? hi[f] - lo[f] : 1;
+      i = x[f] <= lo[f] + a.thr[o+i]/65535*span ? a.left[o+i] : a.right[o+i];
+    }
+    const li = a.leafBase[k] + a.left[o+i], v = [];
+    for(let c=0;c<nout;c++) v.push(a.value[li*nout + c]);
+    runs.push(v);
   }
-  let best = Infinity;
-  for(let i=0;i<I.n;i++) if(d[i] < best) best = d[i];
-  // Auto: the tightest tolerance that matches anything at all, which is the
-  // distance to the single most similar simulation. It follows the query
-  // until the reader takes the slider over.
-  if(epsAuto) epsM = snapUp(best);
-  const sel = [];
-  for(let i=0;i<I.n;i++) if(d[i] <= epsM) sel.push(i);
-  // Outside what the design covers: the closest case is farther from this
-  // shape than a design deposit sits from its own nearest neighbour, so
-  // whatever comes back is not a neighbourhood in any useful sense.
-  if(!sel.length || best > I.nn_p95_m * 4)
-    return {sel: [], stats: null, q, best, within: 0};
-  const pct = (v,p) => {
-    const t = (v.length-1)*p/100, lo = Math.floor(t), f = t-lo;
-    return lo+1 < v.length ? (1-f)*v[lo] + f*v[lo+1] : v[lo];
-  };
-  const stats = I.params.map((name,j)=>{
-    const v = sel.map(i => IU[i*4+j]).sort((a,b)=>a-b);
-    return {name, lo: pct(v,5), mid: pct(v,50), hi: pct(v,95)};
-  });
-  let reach = 0;
-  for(const i of sel) if(d[i] > reach) reach = d[i];
-  return {sel, stats, q, best, within: sel.length, reach};
+  return runs;
 }
 
-// the true value of the query, on the same 0..1 scale the bars use. A sketch
-// has no true value, so there is nothing to mark.
-function trueScaled(j){
+const pctOf = (v,p) => {
+  const t = (v.length-1)*p/100, lo = Math.floor(t), f = t-lo;
+  return lo+1 < v.length ? (1-f)*v[lo] + f*v[lo+1] : v[lo];
+};
+
+// A deposit in, four parameters out. Every tree is one estimate: the median
+// of the sixty is the answer, and their 5th-95th percentile is how much they
+// disagree, which is the only uncertainty this estimator can honestly report.
+// It is the estimator's own spread, not a posterior.
+function invert(e){
+  const rs = forestRuns("shape", shapeFeat(e));
+  const rc = forestRuns("coh", binFeat(e));
+  const col = (runs,k) => runs.map(v=>v[k]).sort((a,b)=>a-b);
+  const raw = {
+    gmod_pa: col(rs,0).map(v=>Math.pow(10,v)),   // trained on log10 G
+    phi_rad: col(rs,1),
+    psi_rad: col(rs,2),
+    cval_pa: col(rc,0),
+  };
+  const stats = IF.params.map(name => {
+    const v = raw[name];
+    return {name, mid: pctOf(v,50), lo: pctOf(v,5), hi: pctOf(v,95)};
+  });
+  return {stats, env: e};
+}
+
+// A value's place on its parameter's sampled range, 0 to 1. G is placed on
+// a log axis because that is how it was sampled; on a linear one the whole
+// lower half of the range would be squeezed into a few pixels.
+function posOf(j, v){
+  const p = KEYS[j], r = IF.ranges[p.f];
+  return p.log
+    ? clamp01((Math.log10(v) - Math.log10(r[0]))
+              / (Math.log10(r[1]) - Math.log10(r[0])))
+    : clamp01((v - r[0]) / (r[1] - r[0]));
+}
+// the value that really produced the query, when there is one. A drawing has
+// no true answer, so there is nothing to mark.
+function truePos(j){
   if(sketch) return null;
   const p = KEYS[j], v = D.levels[p.k][sel[j]];
-  let r = I.ranges[p.f], x = p.log ? Math.log10(v*1e6) : v;
-  return clamp01((x - r[0]) / (r[1] - r[0]));
+  return posOf(j, p.log ? v*1e6 : v);
 }
 
 // ---------------------------------------------------------------- drawing
@@ -575,16 +614,17 @@ function draw(){
     paint(g,sx,sz,near.c,"#e2ded6","#d8d4cc","#eae7e0",false);
     paintPrediction(g,sx,sz,pred);
   }else{
-    if(sketch){
-      inv = inverseFrom(sketch);
-      paintMatches(g,sx,sz,inv);
-      paintSketch(g,sx,sz,sketch);
-    }else{
-      const c = D.cases[idx(sel)];
-      inv = inverse(c);
-      paintMatches(g,sx,sz,inv);
-      paint(g,sx,sz,c,"#c9a08a","#1b3a6b","#bdb5a6",true);
+    const env = sketch ? envOfSketch(sketch) : envOfCase(D.cases[idx(sel)]);
+    inv = env ? invert(env) : null;
+    // The check. The recovered parameters go back through the forward
+    // emulator and what they produce is drawn over what was asked about; if
+    // the two do not coincide, the answer is not to be believed.
+    if(inv && S){
+      inv.check = predictFrom(inv.stats.map(s=>s.mid));
+      paintPrediction(g,sx,sz,inv.check);
     }
+    if(sketch) paintSketch(g,sx,sz,sketch);
+    else paint(g,sx,sz,D.cases[idx(sel)],"#c9a08a","#1b3a6b","#bdb5a6",true);
   }
 
   // the chute and the floor plate: two separate structures, never joined,
@@ -603,23 +643,7 @@ function draw(){
 
   if(mode==="grid") readoutGrid(D.cases[idx(sel)]);
   else if(mode==="pred") readoutPred(pred, near);
-  else { readoutInv(inv); syncEps(inv); }
-}
-
-// every deposit that could not be told apart from this one, drawn together:
-// the picture of what the shape does not determine
-function paintMatches(g,sx,sz,inv){
-  const step = Math.max(1, Math.ceil(inv.sel.length/60));
-  g.strokeStyle = "rgba(42,120,214,.22)"; g.lineWidth = 1;
-  for(let s=0; s<inv.sel.length; s+=step){
-    const o = inv.sel[s]*I.nx;
-    g.beginPath();
-    for(let k=0;k<I.nx;k++){
-      const x = sx(k/(I.nx-1)*I.x_max), z = sz(IS[o+k]/1000);
-      k ? g.lineTo(x,z) : g.moveTo(x,z);
-    }
-    g.stroke();
-  }
+  else readoutInv(inv);
 }
 
 function paint(g,sx,sz,c,dot,line,context,env){
@@ -725,81 +749,65 @@ function readoutPred(p, near){
 }
 
 function readoutInv(inv){
-  if(!inv) return;
-  if(!inv.stats){
-    $("ro").innerHTML = '<tr><td class="cmp">&mdash;</td><td>no deposit in '
-      + 'the design is this close</td></tr>';
-    const e = $("flag");
-    e.className = "flag on";
-    e.innerHTML = "<b>Nothing in the design is within " + EPSCM() + " cm of "
-      + (sketch ? "your drawing" : "this deposit") + ".</b> The closest of the "
-      + "3420 simulations is " + (inv.best*100).toFixed(1) + " cm away, "
-      + "against the " + NNCM() + " cm a simulated deposit sits from its own "
-      + "nearest neighbour. "
-      + (sketch ? "Try a wedge thinning downstream, or a mound near the toe."
-                : "Open &epsilon; up.");
-    return;
+  const f = $("flag");
+  if(!inv){
+    $("ro").innerHTML = '<tr><td class="leg" colspan="3">Draw a deposit on '
+      + 'the canvas.</td></tr>';
+    f.className = "flag"; return;
   }
-  const bar = (j,s) => {
-    const t = trueScaled(j), w = Math.max(s.hi-s.lo, 0.004);
-    return '<tr><td class="par"><span class="sym">' + KEYS[j].sym
-      + '<small>' + KEYS[j].short + '</small></span></td>'
-      + '<td class="cmp">' + (w*100).toFixed(0) + '%</td>'
+  const row = (j,s) => {
+    const p = KEYS[j];
+    const shown = p.log ? s.mid/1e6 : s.mid;
+    const a = posOf(j, s.lo), b = posOf(j, s.hi), tp = truePos(j);
+    return '<tr><td class="par"><span class="sym">' + p.sym
+      + '<small>' + p.short + '</small></span></td>'
+      + '<td class="cmp">' + shown.toFixed(p.dp) + ' ' + p.unit + '</td>'
       + '<td><div class="track">'
-      +   '<div class="span" style="left:' + (s.lo*100) + '%;width:'
-      +     (w*100) + '%"></div>'
-      +   '<div class="tick mid" style="left:' + (s.mid*100) + '%"></div>'
-      +   (t === null ? ''
-          : '<div class="tick tru" style="left:' + (t*100) + '%"></div>')
+      +   '<div class="span" style="left:' + (a*100) + '%;width:'
+      +     (Math.max(b-a, 0.004)*100) + '%"></div>'
+      +   '<div class="tick mid" style="left:' + (posOf(j, s.mid)*100) + '%"></div>'
+      +   (tp === null ? ''
+          : '<div class="tick tru" style="left:' + (tp*100) + '%"></div>')
       + '</div></td></tr>';
   };
-  const one = inv.sel.length < 2;
-  const plural = n => n + (n === 1 ? " simulation" : " simulations");
   $("ro").innerHTML =
-      '<tr><td></td><td class="cmp">width</td><td>'
-    + (one ? 'the single closest simulation'
-           : 'across the ' + inv.sel.length + ' matching simulations')
-    + '</td></tr>'
-    + inv.stats.map((s,j)=>bar(j,s)).join("")
-    + '<tr><td class="leg" colspan="3">'
-    + (one
-       ? 'Each mark is that one simulation\'s value.'
-       : 'The band spans the 5th to 95th percentile of the matches and '
-         + 'the line inside it is their median'
-         + (sketch ? '.' : '; the dark line is the value that really '
-                          + 'produced this deposit.'))
+      '<tr><td></td><td class="cmp">estimate</td><td>across 60 trees</td></tr>'
+    + inv.stats.map((s,j)=>row(j,s)).join("")
+    + '<tr><td class="leg" colspan="3">The band is where the middle 90 per '
+    + 'cent of the sixty trees put it and the line inside is their median, so '
+    + 'it is how much the estimator disagrees with itself, not how much the '
+    + 'deposit constrains the parameter'
+    + (sketch ? '.' : '; the dark line is the value that really produced this '
+                    + 'deposit.')
     + '</td></tr>';
-  // with one match every bar has zero width, so the sentence that compares
-  // the narrowest with the widest has nothing to compare
-  let spread = "";
-  if(!one){
-    const worst = inv.stats.reduce((a,b)=>(b.hi-b.lo)>(a.hi-a.lo)?b:a);
-    const best  = inv.stats.reduce((a,b)=>(b.hi-b.lo)<(a.hi-a.lo)?b:a);
-    const nameOf = k => KEYS[I.params.indexOf(k.name)].sym;
-    spread = nameOf(best) + " is pinned to "
-      + ((best.hi-best.lo)*100).toFixed(0) + "% of its range while "
-      + nameOf(worst) + " spans " + ((worst.hi-worst.lo)*100).toFixed(0) + "%. ";
+
+  // how well the answer reproduces the shape it came from
+  let msg = "";
+  if(inv.check){
+    const e = inv.env, nb = IF.n_bins;
+    let ss = 0;
+    for(let b=0;b<nb;b++){
+      const d = inv.check.z[b] - e.z[b]; ss += d*d;
+    }
+    const rms = Math.sqrt(ss/nb);
+    msg = "<b>Put back through the emulator, these parameters produce the "
+      + "blue deposit</b> &mdash; " + (rms*100).toFixed(1) + " cm from the "
+      + (sketch ? "shape you drew" : "one asked about") + ", against the "
+      + ERRCM() + " cm the emulator is wrong by anyway. ";
+    msg += rms > 2.5*S.skill.surface_rmse_m
+      ? "That is well outside its own error, so this shape is not one the "
+        + "model can make and the numbers above mean little."
+      : "Within its own error, so the answer is at least self-consistent.";
   }
-  const f = $("flag");
   f.className = "flag on";
-  if(one){
-    f.innerHTML = "<b>&epsilon; is as tight as it goes: one simulation is "
-      + "within " + EPSCM() + " cm.</b> The ticks are its parameters &mdash; a "
-      + "single answer with no range to it. <b>Open &epsilon; up</b> and the "
-      + "bars spread out into everything else the shape allows, which is the "
-      + "thing worth looking at.";
-  }else if(!sketch){
-    f.innerHTML = "<b>" + plural(inv.within) + " produce this deposit "
-      + "to within " + EPSCM() + " cm.</b> " + spread
-      + "Blue tick, the median of those; dark tick, the true value. "
-      + "Draw on the canvas to ask about a shape of your own.";
-  }else{
-    f.innerHTML = "<b>" + plural(inv.within) + " match your drawing to "
-      + "within " + EPSCM() + " cm</b> (closest "
-      + (inv.best*100).toFixed(1) + " cm). " + spread
-      + "No dark tick: a drawing has no true answer.";
-  }
+  f.innerHTML = msg
+    + " Across the 2401 solved deposits this estimator has never seen, it "
+    + "recovers <b>friction at R&sup2; = " + R2OF("phi_rad") + " and stiffness "
+    + "at " + R2OF("gmod_log10") + "</b> &mdash; which is the result this page "
+    + "is about: a deposit records what the material's friction was, and "
+    + "little about how stiff it was.";
 }
+
 boot();
 </script>
 </body>
