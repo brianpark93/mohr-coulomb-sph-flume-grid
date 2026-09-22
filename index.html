@@ -697,6 +697,39 @@ function draw(){
   else readoutInv(inv);
 }
 
+// Lighten (f > 1) or darken (f < 1) a hex colour, staying inside the gamut.
+// The same function the figure scripts use, so the beads match.
+function shade(hex, f){
+  const n = parseInt(hex.slice(1), 16);
+  const v = [(n>>16)&255, (n>>8)&255, n&255].map(c => {
+    const u = c/255;
+    return Math.round(255 * (f <= 1 ? u*f : 1 - (1-u)*(2-f)));
+  });
+  return "rgb(" + v.join(",") + ")";
+}
+
+// One bead per colour and size, drawn once and stamped thereafter.
+const BEADS = {};
+function bead(colour, r, dpr){
+  const key = colour + "|" + r + "|" + dpr;
+  if(BEADS[key]) return BEADS[key];
+  const pad = 1.5, half = r + pad, px = Math.ceil(2*half*dpr);
+  const cv = document.createElement("canvas");
+  cv.width = cv.height = px;
+  const g = cv.getContext("2d");
+  g.scale(dpr, dpr);
+  g.beginPath(); g.arc(half, half, r, 0, 6.2832);
+  g.fillStyle = colour; g.fill();
+  g.lineWidth = Math.max(0.4, r*0.30);
+  g.strokeStyle = shade(colour, 0.58); g.stroke();
+  g.globalAlpha = 0.75;
+  g.beginPath();
+  g.arc(half - r*0.34, half - r*0.34, r*0.45, 0, 6.2832);
+  g.fillStyle = shade(colour, 1.62); g.fill();
+  BEADS[key] = {img: cv, half};
+  return BEADS[key];
+}
+
 function paint(g,sx,sz,c,dot,line,context,env){
   if(!c) return;
   // Particles are stored deposit-first: the leading `pin` lie inside the
@@ -705,11 +738,12 @@ function paint(g,sx,sz,c,dot,line,context,env){
   // to the millimetre moves particles across the boundary and anything
   // re-deriving it here would disagree with the measurements.
   if(c.pn){
+    const dpr = devicePixelRatio || 1;
     const dots = (from,to,fill) => {
-      g.fillStyle = fill;
+      const b = bead(fill, 1.7, dpr), s = 2*b.half;
       for(let i=from;i<to;i++){
         const o = (c.po+i)*2;
-        g.fillRect(sx(P[o]/1000)-1.1, sz(P[o+1]/1000)-1.1, 2.2, 2.2);
+        g.drawImage(b.img, sx(P[o]/1000)-b.half, sz(P[o+1]/1000)-b.half, s, s);
       }
     };
     dots(c.pin, c.pn, context);   // context, behind
