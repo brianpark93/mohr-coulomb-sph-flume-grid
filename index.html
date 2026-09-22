@@ -16,10 +16,10 @@
   }
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--ink);
-       font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+       font:17px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
   .page{max-width:1180px;margin:0 auto;padding:28px 20px 60px}
-  h1{font-size:22px;margin:0 0 4px;font-weight:650;letter-spacing:-.01em}
-  .sub{color:var(--muted);font-size:14px;margin:0 0 18px}
+  h1{font-size:26px;margin:0 0 4px;font-weight:650;letter-spacing:-.01em}
+  .sub{color:var(--muted);font-size:16px;margin:0 0 18px}
   .sub a{color:var(--deep)}
   .card{background:var(--panel);border:1px solid var(--line);border-radius:10px}
   .stage{padding:14px 16px 6px;margin-bottom:18px}
@@ -27,7 +27,7 @@
   .layout{display:grid;grid-template-columns:1.25fr .75fr;gap:18px}
   @media (max-width:860px){.layout{grid-template-columns:1fr}}
   .pad{padding:16px 18px}
-  h2{font-size:13px;text-transform:uppercase;letter-spacing:.06em;
+  h2{font-size:14px;text-transform:uppercase;letter-spacing:.06em;
      color:var(--muted);margin:0 0 14px;font-weight:600}
   .row{margin-bottom:16px}
   .row:last-child{margin-bottom:4px}
@@ -37,26 +37,27 @@
   .sym small{font-weight:400;color:var(--muted);margin-left:6px}
   .val{font-variant-numeric:tabular-nums;color:var(--deep);font-weight:600}
   input[type=range]{width:100%;accent-color:var(--deep);margin:0}
-  .ticks{display:flex;justify-content:space-between;font-size:10px;
-         color:var(--muted);font-variant-numeric:tabular-nums;margin-top:2px}
+  .ticks{display:flex;justify-content:space-between;
+         color:var(--muted);font-variant-numeric:tabular-nums;margin-top:2px;
+         font-size:12px}
   table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
-  td{padding:5px 0;border-bottom:1px solid var(--grid);font-size:14px}
+  td{padding:7px 0;border-bottom:1px solid var(--grid);font-size:16px}
   td:last-child{text-align:right;font-weight:600}
   td.cmp{text-align:right;font-weight:400;color:var(--muted);width:6.5em}
   tr:last-child td{border-bottom:none}
-  .flag{margin-top:14px;padding:10px 12px;border-radius:7px;font-size:13px;
-        line-height:1.45;display:none}
+  .flag{margin-top:16px;padding:12px 14px;border-radius:7px;font-size:15px;
+        line-height:1.5;display:none}
   .flag.on{display:block;background:#fdf0ee;border:1px solid #f0cdc7;
            color:var(--warn)}
   .btns{display:flex;gap:8px;margin-top:16px;flex-wrap:wrap}
-  button{font:inherit;font-size:13px;padding:7px 12px;border-radius:7px;
+  button{font:inherit;font-size:15px;padding:9px 14px;border-radius:7px;
          border:1px solid var(--line);background:#fff;color:var(--ink);
          cursor:pointer}
   button:hover{border-color:var(--muted)}
   button.active{background:var(--deep);border-color:var(--deep);color:#fff}
   .modes{display:flex;gap:0;margin:0 0 18px;border:1px solid var(--line);
          border-radius:8px;overflow:hidden;width:fit-content}
-  .modes button{border:0;border-radius:0;padding:8px 16px;font-size:13.5px}
+  .modes button{border:0;border-radius:0;padding:10px 18px;font-size:15.5px}
   .modes button+button{border-left:1px solid var(--line)}
   .track{position:relative;height:16px;border-radius:4px;background:var(--grid);
          width:100%;min-width:130px}
@@ -66,8 +67,8 @@
   .tick.mid{background:var(--pred)}
   .tick.tru{background:var(--ink)}
   td .track{margin:2px 0}
-  .note{color:var(--muted);font-size:12.5px;line-height:1.5;margin-top:14px}
-  .key{font-size:15px;line-height:1}
+  .note{color:var(--muted);font-size:14.5px;line-height:1.55;margin-top:14px}
+  .key{font-size:17px;line-height:1}
   .load{padding:50px 20px;text-align:center;color:var(--muted)}
 </style>
 </head>
@@ -242,42 +243,23 @@ const TOEPCT = () => S ? (S.x_min_tail.toe_fraction*100).toFixed(1) : "-";
 
 const MODETEXT = () => ({
   grid:
-    "2401 LS-DYNA SPH simulations, one for every combination of seven levels "
-    + "of each parameter, so any three can be held while the fourth is "
-    + "stepped. <b>Every shape here was solved.</b>",
+    "2401 LS-DYNA simulations: every combination of seven levels of each "
+    + "parameter. <b>Every shape here was solved.</b>",
   pred:
-    "A Gaussian-process emulator maps the four parameters to the whole "
-    + "arrested deposit, so the sliders move continuously instead of in "
-    + "seven steps. <b>Nothing here was solved</b> &mdash; it is what the "
-    + "model predicts. The emulator was trained on 3420 space-filling "
-    + "simulations and has never seen the grid, so the faint particles are "
-    + "an out-of-sample check on the prediction drawn over them. Held out, it "
-    + "reconstructs the whole arrested surface at <b>R&sup2; = " + ERRR2()
-    + "</b>, and the scalar descriptors &mdash; footprint, runout, peak "
-    + "thickness &mdash; at 0.80 to 0.89.",
+    "A Gaussian process predicts the whole deposit from the four parameters, "
+    + "so the sliders move continuously. <b>Nothing here was solved.</b> Held "
+    + "out, it reaches <b>R&sup2; = " + ERRR2() + "</b> on the surface.",
   inv:
-    "The question backwards. <b>Draw a deposit on the canvas</b> and the panel "
-    + "on the right shows what could be recovered from that shape alone. Every "
-    + "one of the 3420 space-filling simulations whose surface lies within "
-    + "&epsilon; RMS of your profile is collected &mdash; deposits that cannot "
-    + "be told apart &mdash; and the bars show the range of each parameter "
-    + "across them. <b>No model is involved</b>, so nothing here can be "
-    + "blamed on a regressor. &epsilon; is yours to set; it starts at "
-    + EPSDEF() + " cm, which is the emulator's own held-out error.",
+    "<b>Draw a deposit</b> and the panel on the right shows what the shape "
+    + "alone can tell you: every simulation whose surface lies within "
+    + "&epsilon; of it, and how widely each parameter ranges across them. "
+    + "<b>No model is involved.</b>",
 });
 const SLIDERNOTE = () => ({
-  grid: "Arrow keys step a slider once it has focus. A pinned shape stays on "
-        + "screen in grey, which is what makes the effect of changing one "
-        + "parameter readable.",
-  pred: "Sliders are continuous here. " + "G moves on a log scale, as it was "
-        + "sampled.",
-  inv:  "Drag &epsilon; and watch the bars. Tight enough and nothing in the "
-        + "design is that close, so there is nothing to report at all; loose, "
-        + "and most of the design matches and every bar fills its track. A "
-        + "narrow bar between those two is the shape pinning that parameter "
-        + "down. Until you draw, an example solved deposit stands in, and its "
-        + "true parameters are marked so you can see what the method recovers "
-        + "and what it misses.",
+  grid: "Arrow keys step a slider. Pin a shape to compare against.",
+  pred: "Sliders are continuous; G is on a log scale.",
+  inv:  "Drag &epsilon;: too tight and nothing matches, too loose and "
+        + "everything does. Until you draw, an example deposit stands in.",
 });
 
 function setMode(m){
@@ -302,36 +284,18 @@ function setMode(m){
   $("keynote").innerHTML =
       m==="grid"
     ? '<span class="key" style="color:#c9a08a">&#9632;</span> the deposit, '
-      + 'which is what every number above describes. '
-      + '<span class="key" style="color:#bdb5a6">&#9632;</span> material still '
-      + 'on the chute or past the end of the plate: drawn for context and '
-      + 'excluded from every measurement. Material that fell below the plate '
-      + 'is not drawn at all.'
+      + 'which every number above describes. '
+      + '<span class="key" style="color:#bdb5a6">&#9632;</span> material on '
+      + 'the chute or past the plate, excluded from every measurement.'
     : m==="pred"
     ? '<span class="key" style="color:#2a78d6">&#9632;</span> the predicted '
-      + 'deposit surface, with a band at the emulator\'s held-out error: '
-      + 'R&sup2; = ' + ERRR2() + ' on the surface, ' + ERRCM() + ' cm against '
-      + 'a ' + BASECM() + ' cm no-model baseline. The band is in centimetres '
-      + 'because it is a distance on this deposit; the score is what compares '
-      + 'across deposits. It is drawn as a surface, not as particles, because a '
-      + 'placement plus a shape is all the emulator outputs. '
+      + 'surface, with a band at the held-out error of ' + ERRCM() + ' cm. '
       + '<span class="key" style="color:#d8d4cc">&#9632;</span> the nearest '
-      + 'solved grid cell, for comparison only.'
-      + '<br><br>The back edge is drawn at the slope toe, where it sits in '
-      + TOEPCT() + '% of the solved runs. The remaining few per cent detach '
-      + 'from the toe and start far out, and <b>which case detaches is not '
-      + 'predictable from the four parameters</b> &mdash; it is this '
-      + 'emulator\'s known failure mode, so the length and shape below are '
-      + 'meaningful where the starting position would not be.'
-    : '<b>The honest caveat.</b> The match is an RMS vertical difference '
-      + 'between surfaces, and that measure is nearly blind to cohesion: '
-      + 'tightening it from ' + EPSDEF() + ' cm to 0.20 cm &mdash; which the '
-      + '&epsilon; slider does, and which cuts the matched set '
-      + 'from about 310 cases to 3 &mdash; leaves cohesion no better recovered, '
-      + 'while friction holds throughout. Cohesion\'s signature is surface '
-      + 'texture rather than height, and a regressor given the envelope does '
-      + 'recover it. So read a wide cohesion bar as <i>this criterion cannot '
-      + 'see it</i>, not as <i>the deposit does not contain it</i>.';
+      + 'solved grid cell. The back edge is drawn at the slope toe, where '
+      + TOEPCT() + '% of solved runs put it.'
+    : '<b>Caveat.</b> The match is an RMS height difference, which is nearly '
+      + 'blind to cohesion. Read a wide cohesion bar as <i>this criterion '
+      + 'cannot see it</i>, not as <i>the deposit does not contain it</i>.';
   buildSliders(); draw();
 }
 
@@ -353,8 +317,8 @@ const disp = (i,v) => KEYS[i].log ? v/1e6 : v;      // G is stored in Pa
 function buildEpsSlider(){
   $("sliders").innerHTML =
       '<div class="row">'
-    + '<div class="lab"><span class="sym">&epsilon;<small>two deposits count '
-    + 'as the same shape within this</small></span>'
+    + '<div class="lab"><span class="sym">&epsilon;<small>match tolerance'
+    + '</small></span>'
     + '<span class="val" id="veps"></span></div>'
     + '<input type="range" min="2" max="60" step="0.5" value="'
     + (epsM*1000).toFixed(1) + '" id="seps">'
@@ -367,7 +331,7 @@ function buildEpsSlider(){
 function syncEps(){
   const atDefault = Math.abs(epsM - I.eps_m) < 2.6e-4;
   $("veps").innerHTML = (epsM*100).toFixed(2) + " cm"
-    + (atDefault ? ' <small>= the emulator\'s own error</small>' : '');
+    + (atDefault ? ' <small>the emulator\'s own error</small>' : '');
 }
 
 function buildSliders(){
@@ -746,16 +710,11 @@ function readoutInv(inv){
     const e = $("flag");
     e.className = "flag on";
     e.innerHTML = "<b>Nothing in the design is within " + EPSCM() + " cm of "
-      + (sketch ? "your drawing" : "this deposit") + ".</b> The closest of the "
-      + "3420 simulations is " + (inv.best*100).toFixed(1) + " cm away, so "
-      + "there is no set of deposits that cannot be told apart and nothing to "
-      + "report. "
-      + (sketch
-         ? "Draw something the model can actually produce &mdash; a wedge "
-           + "thinning downstream, or a mound in the first half metre &mdash; "
-           + "or widen &epsilon;."
-         : "Widen &epsilon;: below about 1 cm no two deposits in the design "
-           + "are that close to one another, which is itself worth knowing.");
+      + (sketch ? "your drawing" : "this deposit") + "</b> &mdash; the closest "
+      + "of the 3420 is " + (inv.best*100).toFixed(1) + " cm away, so there is "
+      + "nothing to report. "
+      + (sketch ? "Widen &epsilon;, or draw a shape closer to a wedge."
+                : "Widen &epsilon;.");
     return;
   }
   const bar = (j,s) => {
@@ -784,16 +743,14 @@ function readoutInv(inv){
   f.className = "flag on";
   if(!sketch){
     f.innerHTML = "<b>" + inv.within + " simulations produce this deposit "
-      + "to within " + EPSCM() + " cm.</b> Across them " + spread
-      + "The blue tick is the median of the matches, the dark tick the value "
-      + "that actually produced it. This is an example deposit, the middle "
-      + "level of each parameter; draw on the canvas to ask about a shape of "
-      + "your own.";
+      + "to within " + EPSCM() + " cm.</b> " + spread
+      + "Blue tick, the median of the matches; dark tick, the true value. "
+      + "Draw on the canvas to ask about a shape of your own.";
   }else{
     f.innerHTML = "<b>" + inv.within + " simulations match your drawing to "
-      + "within " + EPSCM() + " cm</b> (closest: "
+      + "within " + EPSCM() + " cm</b> (closest "
       + (inv.best*100).toFixed(1) + " cm). " + spread
-      + "There is no dark tick because a drawing has no true answer.";
+      + "No dark tick: a drawing has no true answer.";
   }
 }
 boot();
