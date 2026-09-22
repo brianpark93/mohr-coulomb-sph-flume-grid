@@ -43,7 +43,8 @@
   table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
   td{padding:7px 0;border-bottom:1px solid var(--grid);font-size:16px}
   td:last-child{text-align:right;font-weight:600}
-  td.cmp{text-align:right;font-weight:400;color:var(--muted);width:6.5em}
+  td.cmp{text-align:right;font-weight:400;color:var(--muted);width:4.2em}
+  td.par{white-space:nowrap;width:1%}
   tr:last-child td{border-bottom:none}
   .flag{margin-top:16px;padding:12px 14px;border-radius:7px;font-size:15px;
         line-height:1.5;display:none}
@@ -60,7 +61,7 @@
   .modes button{border:0;border-radius:0;padding:10px 18px;font-size:15.5px}
   .modes button+button{border-left:1px solid var(--line)}
   .track{position:relative;height:16px;border-radius:4px;background:var(--grid);
-         width:100%;min-width:130px}
+         width:100%;min-width:100px}
   .span{position:absolute;top:0;height:16px;border-radius:4px;
         background:rgba(42,120,214,.30)}
   .tick{position:absolute;top:-2px;width:2px;height:20px;margin-left:-1px}
@@ -116,10 +117,10 @@
 <script>
 const AX = {x0:-0.16, x1:2.06, z0:-0.06, z1:0.46};   // metres, fixed everywhere
 const KEYS = [
-  {k:"gmod_mpa", f:"gmod_pa", sym:"G",      name:"shear modulus",  unit:"MPa", dp:2, log:true},
-  {k:"phi_rad",  f:"phi_rad", sym:"\u03c6", name:"friction angle", unit:"rad", dp:3},
-  {k:"psi_rad",  f:"psi_rad", sym:"\u03c8", name:"dilation angle", unit:"rad", dp:3},
-  {k:"cval_pa",  f:"cval_pa", sym:"c",      name:"cohesion",       unit:"Pa",  dp:0},
+  {k:"gmod_mpa", f:"gmod_pa", sym:"G",      name:"shear modulus",  short:"stiffness", unit:"MPa", dp:2, log:true},
+  {k:"phi_rad",  f:"phi_rad", sym:"\u03c6", name:"friction angle", short:"friction",  unit:"rad", dp:3},
+  {k:"psi_rad",  f:"psi_rad", sym:"\u03c8", name:"dilation angle", short:"dilation",  unit:"rad", dp:3},
+  {k:"cval_pa",  f:"cval_pa", sym:"c",      name:"cohesion",       short:"cohesion",  unit:"Pa",  dp:0},
 ];
 const NSTEP = 240;                    // slider resolution in prediction mode
 
@@ -719,7 +720,8 @@ function readoutInv(inv){
   }
   const bar = (j,s) => {
     const t = trueScaled(j), w = Math.max(s.hi-s.lo, 0.004);
-    return '<tr><td>' + KEYS[j].sym + '<small>' + KEYS[j].name + '</small></td>'
+    return '<tr><td class="par"><span class="sym">' + KEYS[j].sym
+      + '<small>' + KEYS[j].short + '</small></span></td>'
       + '<td class="cmp">' + (w*100).toFixed(0) + '%</td>'
       + '<td><div class="track">'
       +   '<div class="span" style="left:' + (s.lo*100) + '%;width:'
