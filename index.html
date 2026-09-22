@@ -764,8 +764,8 @@ function readoutInv(inv){
     + '<tr><td class="leg" colspan="3">'
     + (one
        ? 'Each mark is that one simulation\'s value.'
-       : 'The band is where the middle \u005b5&ndash;95\u005d per cent of the '
-         + 'matches lie, and the line inside it is their median'
+       : 'The band spans the 5th to 95th percentile of the matches and '
+         + 'the line inside it is their median'
          + (sketch ? '.' : '; the dark line is the value that really '
                           + 'produced this deposit.'))
     + '</td></tr>';
