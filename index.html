@@ -473,7 +473,10 @@ function predictFrom(raw){
   // value would displace every ordinary prediction to chase a rare one it
   // cannot get right anyway.
   const xmin = 0;
+  // z bins are absolute; the floor particle centres sit at -0.020003 m, and
+  // grid7.json reports z_max above that datum, so the prediction does too
   let zmax = 0; for(let b=0;b<nb;b++) if(z[b]>zmax) zmax=z[b];
+  zmax += 0.020003;
   return {raw, z, xmin, spread, xmax: xmin+spread, zmax, xminFit: o.x_min};
 }
 
