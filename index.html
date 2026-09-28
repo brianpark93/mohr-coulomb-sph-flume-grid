@@ -290,6 +290,35 @@ async function boot(){
   cv.addEventListener("pointerup", () => { if(sketch) sketch._last = null; });
   addEventListener("resize", draw);
   setMode("grid");
+  applyUrl();
+}
+
+// A link can open the page in a given mode with a deposit already drawn:
+//   ?mode=inv&sketch=0.02:0.03,0.10:0.08,0.30:0.11,0.50:0.06,0.65:0
+// pairs of x:z in metres, joined by straight lines; outside them the sketch
+// is empty. Used for the manuscript's screenshots and for sharing a shape.
+function applyUrl(){
+  const q = new URLSearchParams(location.search);
+  const m = q.get("mode");
+  if(q.get("sketch") && IF){
+    const pts = q.get("sketch").split(",").map(s => s.split(":").map(Number))
+                 .filter(p => p.length === 2 && p.every(Number.isFinite))
+                 .sort((a,b) => a[0]-b[0]);
+    if(pts.length >= 2){
+      sketch = new Float64Array(IF.nx); sketch.fill(0); sketch._last = null;
+      for(let k=0;k<IF.nx;k++){
+        const x = k / (IF.nx-1) * IF.x_max;
+        if(x < pts[0][0] || x > pts[pts.length-1][0]) continue;
+        let i = 0; while(i < pts.length-2 && x > pts[i+1][0]) i++;
+        const [x0,z0] = pts[i], [x1,z1] = pts[i+1];
+        const tt = x1 > x0 ? (x - x0) / (x1 - x0) : 0;
+        sketch[k] = Math.max(0, (1-tt)*z0 + tt*z1);
+      }
+      setMode("inv"); return;
+    }
+  }
+  if(m === "pred" && S) setMode("pred");
+  else if(m === "inv" && IF) setMode("inv");
 }
 
 // These read S and I, which are null until boot() has fetched them, and they
