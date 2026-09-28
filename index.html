@@ -169,6 +169,10 @@
 
 <script>
 const AX = {x0:-0.16, x1:2.06, z0:-0.06, z1:0.46};   // metres, fixed everywhere
+// the plate: floor particle centres, and the datum of every stored envelope.
+// A drawing is kept as HEIGHT ABOVE THIS, so that its toe can reach the plate;
+// it is converted to absolute z only where it meets the trained tables.
+const FLOOR_Z = -0.020003;
 const KEYS = [
   {k:"gmod_mpa", f:"gmod_pa", sym:"G",      name:"shear modulus",  short:"stiffness", unit:"MPa", dp:2, log:true},
   {k:"phi_rad",  f:"phi_rad", sym:"\u03c6", name:"friction angle", short:"friction",  unit:"rad", dp:3},
@@ -295,8 +299,8 @@ async function boot(){
 
 // A link can open the page in a given mode with a deposit already drawn:
 //   ?mode=inv&sketch=0.02:0.03,0.10:0.08,0.30:0.11,0.50:0.06,0.65:0
-// pairs of x:z in metres, joined by straight lines; outside them the sketch
-// is empty. Used for the manuscript's screenshots and for sharing a shape.
+// pairs of x:h in metres, h the height above the plate, joined by straight
+// lines; outside them the sketch is empty. Used for the manuscript's screenshots and for sharing a shape.
 function applyUrl(){
   const q = new URLSearchParams(location.search);
   const m = q.get("mode");
@@ -545,7 +549,7 @@ function envOfSketch(q){
     const u = (xmin + s*b/(nb-1))/dx;
     const j = Math.min(nx-2, Math.floor(u)), f = u-j;
     const v = (1-f)*q[j] + f*q[j+1];
-    z[b] = v > 0 ? v : 0;
+    z[b] = (v > 0 ? v : 0) + FLOOR_Z;          // absolute z, as the tables were trained
   }
   return {z, xmin, s};
 }
@@ -576,7 +580,7 @@ function sketchFromEvent(ev){
   const W = r.width, H = r.height;
   const px = (ev.clientX - r.left), py = (ev.clientY - r.top);
   const x = AX.x0 + px / W * (AX.x1 - AX.x0);
-  const z = Math.max(0, AX.z0 + (H - py) / H * (AX.z1 - AX.z0));
+  const z = Math.max(0, AX.z0 + (H - py) / H * (AX.z1 - AX.z0) - FLOOR_Z);   // height above the plate
   const k = Math.round(x / IF.x_max * (IF.nx - 1));
   if(k < 0 || k >= IF.nx) return;
   if(!sketch){ sketch = new Float64Array(IF.nx); sketch.fill(0); sketch._last = k; }
@@ -593,12 +597,12 @@ function sketchFromEvent(ev){
 
 function paintSketch(g,sx,sz,q){
   g.fillStyle = "rgba(201,160,138,.35)";
-  g.beginPath(); g.moveTo(sx(0), sz(0));
-  for(let k=0;k<IF.nx;k++) g.lineTo(sx(k/(IF.nx-1)*IF.x_max), sz(q[k]));
-  g.lineTo(sx(IF.x_max), sz(0)); g.closePath(); g.fill();
+  g.beginPath(); g.moveTo(sx(0), sz(FLOOR_Z));
+  for(let k=0;k<IF.nx;k++) g.lineTo(sx(k/(IF.nx-1)*IF.x_max), sz(q[k] + FLOOR_Z));
+  g.lineTo(sx(IF.x_max), sz(FLOOR_Z)); g.closePath(); g.fill();
   g.strokeStyle = "#8d6a53"; g.lineWidth = 2.4; g.beginPath();
   for(let k=0;k<IF.nx;k++){
-    const x = sx(k/(IF.nx-1)*IF.x_max), z = sz(q[k]);
+    const x = sx(k/(IF.nx-1)*IF.x_max), z = sz(q[k] + FLOOR_Z);
     k ? g.lineTo(x,z) : g.moveTo(x,z);
   }
   g.stroke();
