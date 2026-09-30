@@ -376,7 +376,11 @@ const MODETEXT = () => ({
 });
 const SLIDERNOTE = () => ({
   grid: "Arrow keys step a slider. Pin a shape to compare against.",
-  pred: "Sliders are continuous; G is on a log scale.",
+  pred: "Sliders are continuous; G is on a log scale. The grey tick "
+        + "<span style='display:inline-block;width:3px;height:14px;border-radius:1.5px;"
+        + "background:#a29e96;vertical-align:-3px;margin:0 3px'></span> on a slider marks the nearest "
+        + "solved grid cell, the one drawn in grey behind the prediction; it hides "
+        + "under the thumb when the slider sits on a solved value.",
   inv:  "The answer is checked, not asserted: it goes back through the "
         + "forward emulator and the deposit it produces is drawn over yours. "
         + "Until you draw, an example deposit stands in.",
@@ -455,7 +459,7 @@ function buildSliders(){
       + '<small>' + p.name + '</small></span>'
       + '<span class="val" id="v' + i + '"></span></div>'
       + '<div class="trk"><input type="range" min="0" max="' + max + '" step="1" value="'
-      + val + '" id="s' + i + '"><div class="near" id="n' + i + '"></div></div>'
+      + val + '" id="s' + i + '"><div class="near" id="n' + i + '" title="nearest solved grid cell"></div></div>'
       + '<div class="ticks"><span>' + fmt(lo,p) + '</span><span>'
       + fmt(hi,p) + '</span></div></div>';
   }).join("");
