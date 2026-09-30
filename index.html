@@ -83,6 +83,11 @@
                     background:#fff;border:.5px solid rgba(0,0,0,.08);
                     box-shadow:0 1px 4px rgba(0,0,0,.18)}
   input[type=range]:focus{outline:none}
+  .trk{position:relative}
+  .trk input[type=range]{position:relative;z-index:1}
+  .trk .near{position:absolute;top:3px;width:3px;height:16px;border-radius:1.5px;
+             background:#a29e96;transform:translateX(-50%);pointer-events:none;
+             display:none;z-index:0}
   input[type=range]:focus::-webkit-slider-thumb{box-shadow:0 0 0 4px
                     rgba(0,113,227,.25), 0 1px 4px rgba(0,0,0,.18)}
 
@@ -301,6 +306,8 @@ async function boot(){
 //   ?mode=inv&sketch=0.02:0.03,0.10:0.08,0.30:0.11,0.50:0.06,0.65:0
 // pairs of x:h in metres, h the height above the plate, joined by straight
 // lines; outside them the sketch is empty. Used for the manuscript's screenshots and for sharing a shape.
+// Likewise ?mode=pred&p=20,0.8,0.05,500 opens the emulator at G = 20 MPa,
+// phi = 0.8, psi = 0.05 rad and c = 500 Pa, each clipped to its range.
 function applyUrl(){
   const q = new URLSearchParams(location.search);
   const m = q.get("mode");
@@ -321,7 +328,16 @@ function applyUrl(){
       setMode("inv"); return;
     }
   }
-  if(m === "pred" && S) setMode("pred");
+  if(m === "pred" && S){
+    const p = (q.get("p") || "").split(",").map(Number);
+    if(p.length === 4 && p.every(Number.isFinite)){
+      KEYS.forEach((k,i)=>{
+        const r = S.ranges[k.f], v = k.log ? p[i]*1e6 : p[i];
+        cont[i] = clamp01(k.log ? Math.log(v/r[0]) / Math.log(r[1]/r[0]) : (v - r[0]) / (r[1] - r[0]));
+      });
+    }
+    setMode("pred");
+  }
   else if(m === "inv" && IF) setMode("inv");
 }
 
@@ -395,7 +411,8 @@ function setMode(m){
     ? '<span class="key" style="color:#2a78d6">&#9632;</span> the predicted '
       + 'surface, with a band at the held-out error of ' + ERRCM() + ' cm. '
       + '<span class="key" style="color:#d8d4cc">&#9632;</span> the nearest '
-      + 'solved grid cell. The back edge is drawn at the slope toe, where '
+      + 'solved grid cell; the grey tick on each slider is where its '
+      + 'parameters sit. The back edge is drawn at the slope toe, where '
       + TOEPCT() + '% of solved runs put it.'
     : '<span class="key" style="color:#c9a08a">&#9632;</span> the shape '
       + 'being asked about. '
@@ -437,8 +454,8 @@ function buildSliders(){
       + '<div class="lab"><span class="sym">' + p.sym
       + '<small>' + p.name + '</small></span>'
       + '<span class="val" id="v' + i + '"></span></div>'
-      + '<input type="range" min="0" max="' + max + '" step="1" value="'
-      + val + '" id="s' + i + '">'
+      + '<div class="trk"><input type="range" min="0" max="' + max + '" step="1" value="'
+      + val + '" id="s' + i + '"><div class="near" id="n' + i + '"></div></div>'
       + '<div class="ticks"><span>' + fmt(lo,p) + '</span><span>'
       + fmt(hi,p) + '</span></div></div>';
   }).join("");
@@ -511,6 +528,19 @@ function predictFrom(raw){
   let zmax = 0; for(let b=0;b<nb;b++) if(z[b]>zmax) zmax=z[b];
   zmax += 0.020003;
   return {raw, z, xmin, spread, xmax: xmin+spread, zmax, xminFit: o.x_min};
+}
+
+// the grey tick on each slider: where the nearest solved cell's value sits
+// on the continuous scale, so the thumb can be read against it
+function markNearest(near){
+  KEYS.forEach((p,i)=>{
+    const el = $("n"+i); if(!el) return;
+    if(!near){ el.style.display = "none"; return; }
+    const r = S.ranges[p.f], v = D.levels[p.k][near.s[i]] * (p.log ? 1e6 : 1);
+    const u = p.log ? Math.log(v/r[0]) / Math.log(r[1]/r[0]) : (v - r[0]) / (r[1] - r[0]);
+    el.style.left = "calc(11px + " + (100*clamp01(u)).toFixed(2) + "% - " + (22*clamp01(u)).toFixed(2) + "px)";
+    el.style.display = "block";
+  });
 }
 
 // nearest cell of the solved grid, so a prediction can be eyeballed against
@@ -698,6 +728,7 @@ function draw(){
   }else if(mode==="pred"){
     pred = predictDeposit();
     near = nearestCell(pred.raw);
+    markNearest(near);
     paint(g,sx,sz,near.c,"#e2ded6","#d8d4cc","#eae7e0",false);
     paintPrediction(g,sx,sz,pred);
   }else{
