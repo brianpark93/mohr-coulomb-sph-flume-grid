@@ -128,6 +128,23 @@
 
   .note{color:var(--muted);font-size:14.5px;line-height:1.6;margin-top:18px}
   .key{font-size:17px;line-height:1}
+  /* first-visit spotlight. The lit element carries the dimming itself, as a
+     white ring for breathing room and then a very large dark spread. */
+  .spot{position:relative;z-index:61;border-radius:14px;
+        box-shadow:0 0 0 10px rgba(255,255,255,.92),
+                   0 0 0 9999px rgba(0,0,0,.46);
+        transition:box-shadow .5s ease}
+  .card.spot{border-radius:18px}
+  .spot.off{box-shadow:0 0 0 10px rgba(255,255,255,0),
+                       0 0 0 9999px rgba(0,0,0,0)}
+  #hint{position:fixed;z-index:62;max-width:320px;pointer-events:none;
+        background:var(--panel);border-radius:14px;padding:13px 16px;
+        font-size:15px;line-height:1.45;letter-spacing:-.01em;
+        box-shadow:0 10px 34px rgba(0,0,0,.3);
+        opacity:0;transform:translateY(-6px);
+        transition:opacity .35s ease,transform .35s ease}
+  #hint.on{opacity:1;transform:none}
+  #hint .esc{display:block;margin-top:7px;color:var(--muted);font-size:13px}
   .load{padding:72px 20px;text-align:center;color:var(--muted);font-size:17px}
 </style>
 </head>
@@ -174,6 +191,7 @@
     </div>
   </div>
 </div>
+<div id="hint"></div>
 
 <script>
 const AX = {x0:-0.16, x1:2.06, z0:-0.06, z1:0.46};   // metres, fixed everywhere
@@ -422,6 +440,62 @@ const SLIDERNOTE = () => ({
         + "Until you draw, an example deposit stands in.",
 });
 
+// ------------------------------------------------------- first-visit hint
+// Each tab is driven by one control. The first time a tab is opened in a
+// session the rest of the page is dimmed, so there is no question about
+// where to start. It lifts on the first interaction and does not return.
+const SPOT = {
+  grid: {q:"#sliders",    t:"<b>Move a slider.</b> Every step is a simulation that was actually run."},
+  pred: {q:"#sliders",    t:"<b>Move a slider.</b> The prediction follows continuously, between the runs."},
+  inv:  {q:".card.stage", t:"<b>Draw a deposit here.</b> Drag a profile across the plate and the four parameters are read off its shape."},
+};
+let spotEl = null, spotTimer = null;
+
+function hintPlace(){
+  if(!spotEl) return;
+  const r = spotEl.getBoundingClientRect(), h = $("hint");
+  const w = h.offsetWidth || 320, hh = h.offsetHeight || 80;
+  let left = r.left + r.width / 2 - w / 2;
+  left = Math.max(12, Math.min(left, innerWidth - w - 12));
+  let top = r.bottom + 16;
+  if(top + hh > innerHeight - 12) top = Math.max(12, r.top - hh - 16);
+  h.style.left = left + "px";
+  h.style.top = top + "px";
+}
+
+function spotOff(){
+  if(!spotEl) return;
+  clearTimeout(spotTimer);
+  const el = spotEl;
+  spotEl = null;
+  el.classList.add("off");
+  $("hint").classList.remove("on");
+  setTimeout(() => el.classList.remove("spot", "off"), 600);
+}
+
+function spotOn(m){
+  const s = SPOT[m];
+  if(!s) return;
+  try{
+    if(sessionStorage.getItem("spot-" + m)) return;
+    sessionStorage.setItem("spot-" + m, "1");
+  }catch(e){ return; }
+  spotOff();
+  const el = document.querySelector(s.q);
+  if(!el) return;
+  spotEl = el;
+  el.classList.add("spot");
+  $("hint").innerHTML = s.t + '<span class="esc">Click anywhere to dismiss</span>';
+  requestAnimationFrame(() => { hintPlace(); $("hint").classList.add("on"); });
+  spotTimer = setTimeout(spotOff, 9000);
+}
+
+addEventListener("pointerdown", spotOff, true);
+addEventListener("keydown", spotOff, true);
+addEventListener("wheel", spotOff, {passive:true});
+addEventListener("resize", hintPlace);
+addEventListener("scroll", hintPlace, true);
+
 function setMode(m){
   mode = m;
   for(const k of ["grid","pred","inv"])
@@ -468,6 +542,7 @@ function setMode(m){
       + 'shape is outside what the model can make and the numbers mean '
       + 'little.';
   buildSliders(); draw();
+  spotOn(m);
 }
 
 // ---------------------------------------------------------------- sliders
