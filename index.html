@@ -128,51 +128,30 @@
 
   .note{color:var(--muted);font-size:14.5px;line-height:1.6;margin-top:18px}
   .key{font-size:17px;line-height:1}
-  /* first-visit spotlight. The lit control carries the dimming itself, as a
-     white ring for air and then a very large soft spread, so the hole takes
-     its own shape and nothing is laid out twice. Apple's easing throughout. */
+  /* first-visit spotlight. The lit control carries the dimming itself: a
+     blurred white halo painted over a very large dark spread, so the page
+     fades out of the box rather than stopping at an edge. */
   .spot{position:relative;z-index:61;border-radius:14px;
         box-shadow:0 0 0 0 rgba(255,255,255,0), 0 0 0 9999px rgba(0,0,0,0);
-        transition:box-shadow .6s cubic-bezier(.32,.72,0,1),
-                   transform .6s cubic-bezier(.32,.72,0,1)}
+        transition:box-shadow .6s cubic-bezier(.32,.72,0,1)}
   .card.spot{border-radius:18px}
-  .spot.lit{box-shadow:0 0 0 12px rgba(255,255,255,.95),
-                       0 0 0 9999px rgba(0,0,0,.44);
-            transform:scale(1.012)}
-  .spot::after{content:"";position:absolute;inset:-12px;border-radius:inherit;
-               pointer-events:none;box-shadow:0 0 0 0 rgba(0,113,227,0)}
-  .spot.lit::after{animation:spotring 2.6s cubic-bezier(.32,.72,0,1) infinite}
-  @keyframes spotring{
-    0%{box-shadow:0 0 0 0 rgba(0,113,227,.40)}
-    65%{box-shadow:0 0 0 16px rgba(0,113,227,0)}
-    100%{box-shadow:0 0 0 0 rgba(0,113,227,0)}
-  }
+  .spot.lit{box-shadow:0 0 46px 16px rgba(255,255,255,.94),
+                       0 0 0 9999px rgba(0,0,0,.42)}
 
   #hint{position:fixed;z-index:62;max-width:330px;pointer-events:none;
-        background:rgba(255,255,255,.74);
+        background:rgba(255,255,255,.76);
         -webkit-backdrop-filter:blur(22px) saturate(180%);
         backdrop-filter:blur(22px) saturate(180%);
         border:.5px solid rgba(255,255,255,.7);
         border-radius:16px;padding:14px 17px;
         font-size:15px;line-height:1.45;letter-spacing:-.012em;
-        box-shadow:0 14px 44px rgba(0,0,0,.26),0 2px 6px rgba(0,0,0,.10);
-        opacity:0;transform:translateY(10px) scale(.96);
+        box-shadow:0 14px 44px rgba(0,0,0,.22),0 2px 6px rgba(0,0,0,.08);
+        opacity:0;transform:translateY(10px);
         transition:opacity .5s cubic-bezier(.32,.72,0,1),
                    transform .5s cubic-bezier(.32,.72,0,1)}
   #hint.on{opacity:1;transform:none}
-  #hint::before{content:"";position:absolute;left:var(--cx,50%);width:15px;
-                height:15px;background:rgba(255,255,255,.80);
-                border-left:.5px solid rgba(255,255,255,.7);
-                border-top:.5px solid rgba(255,255,255,.7);
-                border-radius:3px 0 0 0}
-  #hint.below::before{top:-8px;transform:translateX(-50%) rotate(45deg)}
-  #hint.above::before{bottom:-8px;transform:translateX(-50%) rotate(225deg)}
   #hint .esc{display:block;margin-top:8px;color:var(--muted);font-size:13px}
-  @media (prefers-reduced-motion:reduce){
-    .spot,.spot.lit,#hint{transition:none}
-    .spot.lit{transform:none}
-    .spot.lit::after{animation:none}
-  }
+  @media (prefers-reduced-motion:reduce){ .spot,#hint{transition:none} }
   .load{padding:72px 20px;text-align:center;color:var(--muted);font-size:17px}
 </style>
 </head>
@@ -477,7 +456,7 @@ const SPOT = {
   pred: {q:"#sliders",    t:"<b>Move a slider.</b> The prediction follows continuously, between the runs."},
   inv:  {q:".card.stage", t:"<b>Draw a deposit here.</b> Drag a profile across the plate and the four parameters are read off its shape."},
 };
-let spotEl = null, spotTimer = null;
+let spotEl = null;
 const spotSeen = {};                 // this page load only, so a refresh repeats it
 
 function hintPlace(){
@@ -486,23 +465,14 @@ function hintPlace(){
   const w = h.offsetWidth || 330, hh = h.offsetHeight || 84;
   let left = r.left + r.width / 2 - w / 2;
   left = Math.max(12, Math.min(left, innerWidth - w - 12));
-  let top = r.bottom + 18, below = true;
-  if(top + hh > innerHeight - 12){
-    top = Math.max(12, r.top - hh - 18);
-    below = false;
-  }
+  let top = r.bottom + 18;
+  if(top + hh > innerHeight - 12) top = Math.max(12, r.top - hh - 18);
   h.style.left = left + "px";
   h.style.top = top + "px";
-  h.classList.toggle("below", below);
-  h.classList.toggle("above", !below);
-  // the caret points at the middle of the lit control, wherever the card sat
-  const cx = Math.max(18, Math.min(r.left + r.width / 2 - left, w - 18));
-  h.style.setProperty("--cx", cx + "px");
 }
 
 function spotOff(){
   if(!spotEl) return;
-  clearTimeout(spotTimer);
   const el = spotEl;
   spotEl = null;
   el.classList.remove("lit");
@@ -530,12 +500,9 @@ function spotOn(m){
       $("hint").classList.add("on");
     });
   });
-  spotTimer = setTimeout(spotOff, 9000);
 }
 
 addEventListener("pointerdown", spotOff, true);
-addEventListener("keydown", spotOff, true);
-addEventListener("wheel", spotOff, {passive:true});
 addEventListener("resize", hintPlace);
 addEventListener("scroll", hintPlace, true);
 
