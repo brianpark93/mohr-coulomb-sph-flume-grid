@@ -137,9 +137,9 @@
                    0 0 0 9999px rgba(0,0,0,0);
         transition:box-shadow .6s cubic-bezier(.32,.72,0,1)}
   .card.spot{border-radius:18px}
-  .spot.lit{box-shadow:0 0 70px 34px rgba(255,255,255,.96),
-                       0 0 150px 76px rgba(255,255,255,.58),
-                       0 0 0 9999px rgba(0,0,0,.44)}
+  .spot.lit{box-shadow:0 0 80px 44px rgba(255,255,255,.97),
+                       0 0 170px 92px rgba(255,255,255,.60),
+                       0 0 0 9999px rgba(0,0,0,.46)}
 
   #hint{position:fixed;z-index:62;max-width:330px;pointer-events:none;
         background:rgba(255,255,255,.76);
@@ -455,8 +455,8 @@ const SLIDERNOTE = () => ({
 // session the rest of the page is dimmed, so there is no question about
 // where to start. It lifts on the first interaction and does not return.
 const SPOT = {
-  grid: {q:"#sliders",    t:"<b>Move a slider.</b> Every step is a simulation that was actually run."},
-  pred: {q:"#sliders",    t:"<b>Move a slider.</b> The prediction follows continuously, between the runs."},
+  grid: {q:"#sliders", card:true, t:"<b>Move a slider.</b> Every step is a simulation that was actually run."},
+  pred: {q:"#sliders", card:true, t:"<b>Move a slider.</b> The prediction follows continuously, between the runs."},
   inv:  {q:".card.stage", t:"<b>Draw a deposit here.</b> Drag a profile across the plate and the four parameters are read off its shape."},
 };
 let spotEl = null;
@@ -488,7 +488,10 @@ function spotOn(m){
   if(!s || spotSeen[m]) return;
   spotSeen[m] = 1;
   spotOff();
-  const el = document.querySelector(s.q);
+  // the whole panel is lit, not just the rows inside it, so the heading and
+  // the buttons do not sit half-dimmed at the edge of the halo
+  let el = document.querySelector(s.q);
+  if(el && s.card) el = el.closest(".card") || el;
   if(!el) return;
   spotEl = el;
   el.classList.add("spot");
